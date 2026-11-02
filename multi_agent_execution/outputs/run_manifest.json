@@ -1,0 +1,63 @@
+{
+  "created_utc": "2026-11-02T13:01:50.261135+00:00",
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "config": {
+    "window_minutes": 30,
+    "step_seconds": 30,
+    "order_size": 100000.0,
+    "initial_price": 100.0,
+    "half_spread_bps": 2.0,
+    "volatility_bps": 2.5,
+    "temporary_impact_bps_per_slice": 0.35,
+    "permanent_impact_bps_per_slice": 0.2,
+    "inventory_risk_weight": 0.025,
+    "terminal_unfilled_penalty_bps": 1000.0,
+    "learning_rate": 0.15,
+    "discount": 0.98,
+    "epsilon_start": 0.35,
+    "epsilon_end": 0.05,
+    "horizon_steps": 60,
+    "base_slice_shares": 1666.6666666666667,
+    "step_volatility_bps": 1.7677669529663689
+  },
+  "fee_tiers_bps": [
+    10.0,
+    30.0,
+    50.0
+  ],
+  "evaluation_scenarios": [
+    {
+      "name": "normal",
+      "volatility_multiplier": 1.0
+    },
+    {
+      "name": "high_volatility",
+      "volatility_multiplier": 2.0
+    }
+  ],
+  "training_opponents": [
+    "twap",
+    "frontloaded",
+    "backloaded"
+  ],
+  "test_opponents": [
+    "twap",
+    "frontloaded",
+    "backloaded",
+    "bursty",
+    "randomized"
+  ],
+  "policies": [
+    "G0_TWAP",
+    "G1_dynamic_rule",
+    "G2_Q_learning",
+    "G3_opponent_aware_Q"
+  ],
+  "training_episodes_per_learner_per_fee": 1200,
+  "evaluation_seeds_per_policy_opponent_fee_scenario": 30,
+  "master_seed": 20261102,
+  "evaluation_episode_count": 3600,
+  "elapsed_seconds": 5.019,
+  "sample_trace_review_required": true,
+  "sample_trace_review_reason": "extreme_market_shock_above_10bp"
+}
