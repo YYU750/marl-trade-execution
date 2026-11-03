@@ -1,25 +1,26 @@
 # marl-trade-execution
 
-多智能体交易执行模拟研究项目。当前可运行实现位于 [multi_agent_execution/](multi_agent_execution/)，围绕收盘前 30 分钟的双机构母单执行，使用 30 秒决策步长（共 60 步），比较固定 TWAP、动态规则、Q-learning 和对手感知 Q-learning。
+双边同步学习的多智能体交易执行模拟研究。当前主模型让基金 A、基金 B 两个表格型 Q-learning Agent 在收盘前 30 分钟共同训练；每 30 秒同步决策，成交流共同影响市场冲击与下一时点价格。训练后通过冻结检查点交叉对局分析策略互动、训练稳定性和有限候选集最佳反应。
 
-## 快速开始
+## 快速运行
 
-需要 Python 3.10 或更新版本；项目仅使用 Python 标准库，无需安装第三方依赖。
+需要 Python 3.10 或更新版本；主模型仅使用 Python 标准库。
 
-    cd multi_agent_execution
-    python .\run_experiment.py
+```powershell
+cd multi_agent_execution
+python .\run_experiment.py
+```
 
-快速检查可运行较小规模：
+默认配置为 5 个独立训练种子、每个 500 回合、每 100 回合保存检查点、每个对局组合使用 30 个评估种子。完整评估覆盖正常波动和两倍波动场景。
 
-    python .\run_experiment.py --episodes 100 --seeds 5
+小规模流程核对：
 
-运行说明、模型假设、实验场景和输出字段见 [multi_agent_execution/README.md](multi_agent_execution/README.md)。模型的状态、动作、奖励和逐步运行流程见 [multi_agent_execution/模型主要运行机制.md](multi_agent_execution/模型主要运行机制.md)。实验结果和训练后的 Q 表保存在 multi_agent_execution/outputs/。
+```powershell
+python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --checkpoint-interval 20 --output-dir .\outputs\advanced_self_play_pilot
+```
 
-进阶版双 Q-learning 自博弈也已实现为独立实验，训练 A、B 两个学习型策略并评估冻结检查点的交叉对局、训练稳定性和候选集最佳反应；它不改变标准版固定规则对手基准。运行命令：
+详细的状态、动作、奖励、训练流程、研究结果和限制见 [主模型说明](multi_agent_execution/模型主要运行机制.md) 与 [运行指南](multi_agent_execution/README.md)。默认运行产物位于 `multi_agent_execution/outputs/advanced_self_play/`。
 
-    cd multi_agent_execution
-    python .\run_advanced_self_play.py
+旧版单学习者/固定规则对手实验留在 `multi_agent_execution/run_standard_benchmark.py` 作为历史对照代码；默认入口 `run_experiment.py` 运行双边同步学习主模型。
 
-进阶版输出单独保存在 `multi_agent_execution/outputs/advanced_self_play/`。完整运行方式与研究边界见项目说明。
-
-本项目是可复现的模拟研究，不连接实时行情、账户或真实下单接口。研究假设需要通过运行结果检验，不应将模拟结论解读为真实交易建议。
+本项目是简化市场仿真，不连接实时行情、账户或真实下单接口。模拟结果不构成真实市场效果或交易建议。

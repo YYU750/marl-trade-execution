@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Two-sided Q-learning self-play extension for the execution simulator.
+"""Primary two-sided Q-learning self-play model for execution simulation.
 
-This is a local, stylized research simulation. It is intentionally separate
-from run_experiment.py so the fixed-rule B benchmarks remain reproducible.
-Only Python's standard library and the baseline simulator are required.
+This is the primary local, stylized research simulation. A and B learn
+simultaneously. The fixed-opponent benchmark remains available separately as
+run_standard_benchmark.py. Only Python's standard library is required.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from run_experiment import (
+from run_standard_benchmark import (
     ACTIONS,
     Config,
     QLearningAgent,
@@ -507,7 +507,7 @@ def main() -> None:
     write_csv(out / "candidate_best_response.csv", best_response)
     (out / "findings.md").write_text(findings_text(args, summaries, best_response, all_diagnostics), encoding="utf-8")
     script_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    baseline_path = Path(__file__).with_name("run_experiment.py")
+    core_path = Path(__file__).with_name("run_standard_benchmark.py")
     try:
         output_dir_record = out.resolve().relative_to(Path(__file__).resolve().parent).as_posix()
     except ValueError:
@@ -515,7 +515,7 @@ def main() -> None:
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "script": Path(__file__).name, "script_sha256": script_hash,
-        "baseline_script_sha256": hashlib.sha256(baseline_path.read_bytes()).hexdigest(),
+        "shared_qlearning_core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
         "parameters": {"episodes": args.episodes, "training_runs": args.training_runs,
                        "eval_seeds": args.eval_seeds, "checkpoint_interval": args.checkpoint_interval,
                        "fee_bps": args.fee_bps, "seed": args.seed,

@@ -1,8 +1,8 @@
 {
-  "created_utc": "2026-11-03T10:24:00.783961+00:00",
+  "created_utc": "2026-11-03T10:42:50.279759+00:00",
   "script": "run_advanced_self_play.py",
-  "script_sha256": "7e5ecaacae68f7a21096743d431b58c236c907c1d52e5d7f531fe30dfa31c171",
-  "baseline_script_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
+  "script_sha256": "755459f0e118c5be6c1586563e6246c726e6ffe49da6de740fd64e0d6defdff6",
+  "shared_qlearning_core_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
   "parameters": {
     "episodes": 500,
     "training_runs": 5,
@@ -52,5 +52,5 @@
     "cross_play_summary_rows": 360,
     "checkpoint_count_per_run": 6
   },
-  "elapsed_seconds": 23.781
+  "elapsed_seconds": 24.667
 }
