@@ -68,12 +68,13 @@ class ScheduleAwareQLearningAgent(QLearningAgent):
         return rng.choice([i for i in tried if abs(values[i] - best) < 1e-12])
 
     def update(self, obs: Observation, action: int, reward: float,
-               next_obs: Observation | None) -> None:
+               next_obs: Observation | None) -> dict[str, float | str | None]:
         if self.frozen:
             raise RuntimeError("Cannot update a frozen Q-learning policy")
         state = self.state_key(obs)
         self.visited.add(state)
         current = self.q.setdefault(state, [0.0] * len(ACTIONS))
+        q_before = current[action]
         visits = self.action_visits.setdefault(state, [0] * len(ACTIONS))
         visits[action] += 1
         if next_obs is None:
@@ -89,6 +90,15 @@ class ScheduleAwareQLearningAgent(QLearningAgent):
             future = max(next_values[i] for i in tried) if tried else 0.0
         target = reward + self.config.discount * future
         current[action] += self.config.learning_rate * (target - current[action])
+        return {
+            "state_key": "|".join(map(str, state)),
+            "next_state_key": ("|".join(map(str, self.state_key(next_obs)))
+                               if next_obs is not None else None),
+            "q_before": q_before,
+            "future_value": future,
+            "td_target": target,
+            "q_after": current[action],
+        }
 
     def initial_state_max_q(self) -> float:
         initial = Observation(

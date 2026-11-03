@@ -1,0 +1,18 @@
+{
+  "trace_type": "illustrative simultaneous A/B learning trajectory",
+  "not_part_of_aggregate_evaluation": true,
+  "source_checkpoint_file": "C:\\Users\\kuku\\AppData\\Local\\Temp\\codex-marl-upload-wuxinhan1\\multi_agent_execution\\outputs\\advanced_self_play\\checkpoint_qtables_run1.json",
+  "checkpoint_episode": 500,
+  "seed": 20261103,
+  "scenario": "normal",
+  "fee_bps_one_way": 30.0,
+  "window_minutes": 30,
+  "step_seconds": 30,
+  "steps": 60,
+  "order_size_per_agent_shares": 100000.0,
+  "A_cost_bps": 35.53922704465169,
+  "B_cost_bps": 35.1874922846108,
+  "A_completion": 1.0,
+  "B_completion": 1.0,
+  "note": "Both actions are selected from the same pre-trade snapshot. The saved checkpoint is loaded into temporary mutable copies; these 60 steps demonstrate online Q updates and are excluded from the main cross-play statistics."
+}

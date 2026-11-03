@@ -120,7 +120,8 @@ def frozen_action(agent: QLearningAgent, obs: Any, rng: random.Random) -> int:
 
 def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             seed: int, fee_bps: float, volatility_multiplier: float,
-            epsilon: float = 0.0, training: bool = False) -> dict[str, Any]:
+            epsilon: float = 0.0, training: bool = False,
+            trace_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Run one synchronized episode; both agents act before either is updated."""
     rng_a = random.Random(seed ^ 0x13579BDF)
     rng_b = random.Random(seed ^ 0x2468ACE0)
@@ -140,6 +141,9 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     rngs = {"A": rng_a, "B": rng_b}
 
     for t in range(config.horizon):
+        mid_before = mid
+        remaining_before = remaining.copy()
+        prev_qty_before = prev_qty.copy()
         # Both observations use the same pre-trade mid and only prior-step
         # opponent activity, so neither policy sees the other's current order.
         observations = {
@@ -202,13 +206,55 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             if terminal:
                 learning_reward -= (remaining[name] / config.order_size) * config.terminal_unfilled_penalty_bps
             total_reward[name] += learning_reward
+        update_diagnostics: dict[str, dict[str, Any]] = {}
         if training:
             # Updates occur only after both current actions and the shared
             # market transition have been computed (simultaneous learning).
             for name in ("A", "B"):
-                agents[name].update(observations[name], action_idx[name],
-                                   learning_reward_for(rewards[name], remaining[name], config, terminal),
-                                   next_observations[name])
+                update_diagnostics[name] = agents[name].update(
+                    observations[name], action_idx[name],
+                    learning_reward_for(rewards[name], remaining[name], config, terminal),
+                    next_observations[name]) or {}
+        if trace_rows is not None:
+            for name in ("A", "B"):
+                opponent_name = "B" if name == "A" else "A"
+                td_reward = learning_reward_for(rewards[name], remaining[name], config, terminal)
+                update = update_diagnostics.get(name, {})
+                state = (agents[name].state_key(observations[name])
+                         if hasattr(agents[name], "state_key")
+                         else discretize_state(observations[name], agents[name].opponent_aware))
+                trace_rows.append({
+                    "trace_scope": "illustrative_post_checkpoint_online_update_not_aggregate_evaluation",
+                    "seed": seed,
+                    "scenario_multiplier": volatility_multiplier,
+                    "step": t + 1,
+                    "elapsed_seconds": t * config.step_seconds,
+                    "agent": name,
+                    "state_key": update.get("state_key", "|".join(map(str, state))),
+                    "remaining_before_shares": remaining_before[name],
+                    "opponent_previous_qty": prev_qty_before[opponent_name],
+                    "mid_before": mid_before,
+                    "action": ACTION_NAMES[action_idx[name]],
+                    "action_multiplier": ACTIONS[action_idx[name]],
+                    "submitted_qty": qty[name],
+                    "joint_submitted_qty": pooled_volume,
+                    "temporary_impact_bps": temp_impact,
+                    "half_spread_bps": config.half_spread_bps,
+                    "one_way_fee_bps": fee_bps,
+                    "fill_price_including_fee": fill_prices[name],
+                    "weighted_step_reward": rewards[name],
+                    "terminal_unfilled_penalty_reward": td_reward - rewards[name],
+                    "td_reward": td_reward,
+                    "gamma": config.discount,
+                    "td_future_value": update.get("future_value"),
+                    "td_target": update.get("td_target"),
+                    "q_value_before": update.get("q_before"),
+                    "q_value_after": update.get("q_after"),
+                    "next_state_key": update.get("next_state_key"),
+                    "external_shock_bps": shocks[t],
+                    "permanent_impact_bps": permanent_impact,
+                    "mid_after": next_mid,
+                })
         prev_qty = next_prev_qty
         mid = next_mid
 
@@ -219,7 +265,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         unfilled[name] = max(0.0, config.order_size - fills[name])
         if unfilled[name] < max(1e-9, config.order_size * 1e-12):
             unfilled[name] = 0.0
-        completion[name] = min(1.0, fills[name] / config.order_size)
+        completion[name] = (1.0 if unfilled[name] == 0.0
+                            else min(1.0, fills[name] / config.order_size))
         opportunity = unfilled[name] * (mid - initial_mid) / (config.order_size * initial_mid) * 10_000.0
         gross_bps = ((gross_cash[name] - fills[name] * initial_mid) /
                      (config.order_size * initial_mid) * 10_000.0)
@@ -433,6 +480,9 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         f"- 训练：{args.training_runs} 个独立种子，每个 {args.episodes} 回合；每回合 {Config().horizon} 个 30 秒时间步。",
         f"- 冻结交叉评估：每个训练运行 {len({r['A_checkpoint'] for r in summaries})} 个检查点，{args.eval_seeds} 个配对随机种子；单边手续费 {args.fee_bps:g} bp。",
         "- 训练在正常波动环境进行；训练检查点分别冻结后，在正常与 2 倍波动场景做交叉对局。",
+        f"- 本结果属于路线 A（A/B 双边同步 Independent Q-learning）；路线 B 的规则引导 Double Q 对固定规则对手实验须单独报告。",
+        f"- 当前单边费率为 {args.fee_bps:g} bp（{args.fee_bps / 100:g}%）；按初始价 {Config().initial_price:g}、每方母单 {Config().order_size:,.0f} 股估算，单家满额手续费约 {Config().initial_price * Config().order_size * args.fee_bps / 10_000:,.0f}。",
+        "- 截止时间可行性下界与模拟器提交即成交共同保证 A/B 按时完成；100% 完成率是环境约束，不是策略优势或现实流动性结论。",
         "- 本文件的数字仅是本次命令参数下的模拟结果，不自动代表收敛或现实市场效果。", "",
         "## 最终检查点的交叉对局", "",
         "下表按训练运行和场景汇总 A/B 均采用最终检查点的对局。成本越低越好；完成率和未完成量应同时检查。", "",
@@ -469,6 +519,8 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               "- 双方均为带执行进度状态聚合的表格 Q-learning：状态包含 6 档时间阶段、订单执行进度、价格偏离和对手上一期成交量。TD 奖励与实施缺口口径对齐；下一状态仅从已尝试且可行的动作中自举，避免未尝试动作的零初始化高估。训练中两边策略都在变化，因此环境对任一单方而言是非平稳的。",
               "- 检查点交叉对局把已保存的策略冻结后进行组合评估，避免评估过程继续改写 Q 表；配对种子共享外生价格冲击。",
               "- 稳定性要结合多训练种子的滚动奖励、成本波动、状态覆盖与检查点交叉结果判断。单一训练曲线变平不足以证明收敛。",
+              "- 历史资料若使用 0.3 bp 或 30 个时间步，未按当前手续费和 60 步配置重跑前不得与本结果并表。",
+              "- 可用 export_self_play_trace.py 从保存的最终检查点生成一条额外的 A/B 同步动作、市场反馈和 Q 更新样例；该说明性轨迹不进入本文件的 10,800 局统计。",
               "- 本主模型运行结果写入 outputs/advanced_self_play；规则策略配对比较另由 run_matched_rule_q_comparison.py 生成。",
               "- 该环境是教学用简化撮合模型，没有真实行情、订单簿或实盘接口。"]
     return "\n".join(lines) + "\n"
@@ -532,12 +584,15 @@ def main() -> None:
                    "training_scenarios": ["normal"],
                    "evaluation_scenarios": {name: mult for name, mult in SCENARIOS}},
         "method": {
+            "research_route": "Route A: simultaneous two-sided Independent Q-learning; rule-guided Double Q against fixed opponents is a separately reported Route B extension",
             "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "state_encoding": ScheduleAwareQLearningAgent.state_encoding,
             "reward_alignment": "implementation shortfall plus terminal unfilled-order penalty; no extra inventory-risk shaping",
             "untried_action_bootstrap": "only tried feasible actions are included in the next-state maximum",
             "simultaneous_action_and_update": True,
+            "mandatory_completion_constraint": "minimum feasible action floor plus simulator fills the full submitted quantity; completion rate is constraint-driven",
+            "fee_economic_interpretation": f"{args.fee_bps:g} bp one-way = {args.fee_bps / 100:g}% of traded notional",
             "checkpoint_evaluation": "frozen cross-play on paired seeds",
             "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",
             "claim_boundary": "candidate-set responses are not global optima or Nash equilibria",

@@ -25,4 +25,17 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 若需比较动态规则与 Q-learning，可运行 `multi_agent_execution/run_matched_rule_q_comparison.py`；配对结果和改进候选记录在 `multi_agent_execution/outputs/matched_rule_q_comparison/`。
 
+## 两条实验路线的边界
+
+- **主研究路线 A：双边同步 Independent Q-learning。** A、B 同时训练并在同一仿真市场互相影响；冻结检查点后进行 A/B 全交叉组合。这条路线回答策略互动、学习稳定性和候选集最佳反应问题。
+- **算法扩展路线 B：规则引导 Double Q。** 学习者对固定规则对手训练或测试，检验 Q-learning 相对动态规则的增量价值。它不是两个 Q-learning Agent 同步博弈的证据，结果须单列。
+
+当前主模型统一采用 30 分钟、每 30 秒一步（60 步）、每家 100,000 股、γ=0.98 和单边手续费 30 bp（0.3%）。历史材料中的 0.3 bp、30 步结果若未按同一配置重跑，不与当前结果直接合并。完成约束会在剩余时间不足时抬高最低允许子单量，模拟器因此保证母单在模型内完成；这不代表真实市场保证成交。两条路线与参数口径详见 [研究设计](multi_agent_execution/研究设计与验证方案_修订版.md)。
+
+主模型训练完成后，可从第 1 个训练种子的最终检查点导出一条双边同步学习轨迹，展示双方观察、同时选单、联合冲击、奖励和 Q 更新；该说明性轨迹不计入交叉评估统计：
+
+```powershell
+python .\multi_agent_execution\export_self_play_trace.py --checkpoint 500
+```
+
 本项目是简化市场仿真，不连接实时行情、账户或真实下单接口。模拟结果不构成真实市场效果或交易建议。

@@ -1,9 +1,9 @@
 {
-  "created_utc": "2026-11-03T11:46:15.887547+00:00",
+  "created_utc": "2026-11-03T16:04:45.821379+00:00",
   "script": "run_advanced_self_play.py",
-  "script_sha256": "f12dd96aaef9cf6d4139e97009b5cf6c6986371beb56d3116e2c7fb5c434a515",
-  "shared_qlearning_core_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
-  "schedule_aware_q_sha256": "92e55564d4fd3aea3038a7caa4efc8f49832b104e96712813694c90ace720fad",
+  "script_sha256": "fcabf58107e7216529f140a7771fcd05e4ebc682b2dbb937c2f5f4f41ad6267c",
+  "shared_qlearning_core_sha256": "15bce16ad613243c990272ac477894cdf0709b7247e70d17bf285bcfd92070ed",
+  "schedule_aware_q_sha256": "c81505c8e3009dae0de3e8e7d02096468a791f81c52558ee7d4a6d95441de72e",
   "parameters": {
     "episodes": 500,
     "training_runs": 5,
@@ -40,12 +40,15 @@
     }
   },
   "method": {
+    "research_route": "Route A: simultaneous two-sided Independent Q-learning; rule-guided Double Q against fixed opponents is a separately reported Route B extension",
     "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
     "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
     "state_encoding": "schedule_aware_v1",
     "reward_alignment": "implementation shortfall plus terminal unfilled-order penalty; no extra inventory-risk shaping",
     "untried_action_bootstrap": "only tried feasible actions are included in the next-state maximum",
     "simultaneous_action_and_update": true,
+    "mandatory_completion_constraint": "minimum feasible action floor plus simulator fills the full submitted quantity; completion rate is constraint-driven",
+    "fee_economic_interpretation": "30 bp one-way = 0.3% of traded notional",
     "checkpoint_evaluation": "frozen cross-play on paired seeds",
     "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",
     "claim_boundary": "candidate-set responses are not global optima or Nash equilibria"
@@ -56,5 +59,5 @@
     "cross_play_summary_rows": 360,
     "checkpoint_count_per_run": 6
   },
-  "elapsed_seconds": 12.855
+  "elapsed_seconds": 13.302
 }
