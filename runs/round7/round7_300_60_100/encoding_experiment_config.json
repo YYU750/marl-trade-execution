@@ -1,0 +1,61 @@
+{
+  "status": "complete",
+  "market": {
+    "horizon_steps": 30,
+    "initial_order_shares": 100000,
+    "initial_mid_price": 100.0,
+    "full_spread_bps": 6.0,
+    "liquidity_shares": 20000,
+    "volatility_bps": 2.0,
+    "temporary_impact_bps_per_liquidity_unit": 2.0,
+    "permanent_impact_bps_per_liquidity_unit": 0.6,
+    "max_trade_per_step": 10000,
+    "fee_bps": 0.3,
+    "terminal_penalty_per_share": 0.25,
+    "enforce_completion": true
+  },
+  "q_learning": {
+    "alpha": 0.3,
+    "gamma": 1.0,
+    "epsilon_start": 0.25,
+    "epsilon_min": 0.02,
+    "epsilon_decay": 0.99,
+    "action_multipliers": [
+      0.0,
+      0.5,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "all_other_bins_unchanged": true
+  },
+  "encoding_change": {
+    "control": "exact integer own remaining_shares",
+    "treatment": "own remaining_shares / initial_order_shares binned with edges (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)",
+    "only_changed_state_field": "remaining_shares component",
+    "execution_uses_true_remaining_shares": true,
+    "completion_minimum_uses_true_remaining_shares": true,
+    "not_claimed_markov_sufficient": true
+  },
+  "same_train_seeds_for_both_encodings": [
+    20267103,
+    20267402
+  ],
+  "validation_seeds": [
+    20267403,
+    20267462
+  ],
+  "test_seeds": [
+    20267463,
+    20267562
+  ],
+  "counts": {
+    "train": 300,
+    "validation": 60,
+    "test": 100
+  },
+  "agent_rng_seed_paired": 20267101,
+  "validation_role": "report-only; no parameter or model selection because only one encoding per arm was preregistered",
+  "test_used_for_tuning": false,
+  "smoke": false
+}

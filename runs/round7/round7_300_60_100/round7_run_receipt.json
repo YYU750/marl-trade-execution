@@ -1,0 +1,166 @@
+{
+  "status": "complete",
+  "price_decomposition": {
+    "seed": 20267042,
+    "time_steps_including_initial": 31,
+    "max_absolute_log_decomposition_residual_bps": 3.282929483816588e-12,
+    "identity": "log(C_t/C_0) = log(A_t/A_0) + log(B_t/B_0)",
+    "scenario_overrides": {
+      "exogenous_only": {
+        "permanent_impact_bps_per_liquidity_unit": 0.0,
+        "temporary_impact_bps_per_liquidity_unit": 0.0
+      },
+      "permanent_impact_only": {
+        "volatility_bps": 0.0,
+        "temporary_impact_bps_per_liquidity_unit": 0.0
+      },
+      "combined": "default SimulationConfig"
+    },
+    "twap_action_path_identical": true
+  },
+  "encoding_experiment": {
+    "summary": [
+      {
+        "encoding": "exact_inventory",
+        "test_n": 100,
+        "test_mean_cost_bps": 7.222067519325037,
+        "test_sd_cost_bps": 9.54572131207062,
+        "test_ci95_low_bps": 5.328196411010226,
+        "test_ci95_high_bps": 9.115938627639848,
+        "validation_mean_cost_bps": 7.7808388381999025,
+        "trained_q_states": 2952,
+        "state_visits_median": 1.0,
+        "state_visits_p90": 3,
+        "visited_state_action_pairs": 3215,
+        "unseen_test_state_step_fraction": 0.10966666666666666,
+        "zero_pace_action_fraction": 0.945,
+        "mean_requested_shares_per_episode": 10724.26,
+        "mean_forced_fill_shares_per_episode": 89275.74,
+        "mean_fill_ratio": 1.0
+      },
+      {
+        "encoding": "coarse_remaining_ratio",
+        "test_n": 100,
+        "test_mean_cost_bps": 7.066181925452546,
+        "test_sd_cost_bps": 9.382988910892989,
+        "test_ci95_low_bps": 5.204596925531376,
+        "test_ci95_high_bps": 8.927766925373716,
+        "validation_mean_cost_bps": 7.653869949696295,
+        "trained_q_states": 493,
+        "state_visits_median": 13,
+        "state_visits_p90": 45,
+        "visited_state_action_pairs": 1183,
+        "unseen_test_state_step_fraction": 0.01,
+        "zero_pace_action_fraction": 0.705,
+        "mean_requested_shares_per_episode": 64910.21,
+        "mean_forced_fill_shares_per_episode": 35089.79,
+        "mean_fill_ratio": 1.0
+      },
+      {
+        "encoding": "twap",
+        "test_n": 100,
+        "test_mean_cost_bps": 6.014949514942453,
+        "test_sd_cost_bps": 6.779887136496465,
+        "test_ci95_low_bps": 4.669819907061554,
+        "test_ci95_high_bps": 7.360079122823351,
+        "validation_mean_cost_bps": "",
+        "trained_q_states": 0,
+        "state_visits_median": 0,
+        "state_visits_p90": 0,
+        "visited_state_action_pairs": 0,
+        "unseen_test_state_step_fraction": 0.0,
+        "zero_pace_action_fraction": 0.0,
+        "mean_requested_shares_per_episode": 100000.0,
+        "mean_forced_fill_shares_per_episode": 0.0,
+        "mean_fill_ratio": 1.0
+      }
+    ],
+    "paired": [
+      {
+        "comparison": "coarse_minus_exact",
+        "n": 100,
+        "mean": -0.15588559387249096,
+        "sample_sd": 0.7892476525319362,
+        "ci95_low": -0.31247232813482706,
+        "ci95_high": 0.0007011403898451729
+      },
+      {
+        "comparison": "coarse_minus_twap",
+        "n": 100,
+        "mean": 1.051232410510094,
+        "sample_sd": 3.3525271530226877,
+        "ci95_low": 0.3860910233503929,
+        "ci95_high": 1.7163737976697953
+      },
+      {
+        "comparison": "exact_minus_twap",
+        "n": 100,
+        "mean": 1.207118004382585,
+        "sample_sd": 3.565180791633595,
+        "ci95_low": 0.49978613532247984,
+        "ci95_high": 1.9144498734426905
+      }
+    ],
+    "config": {
+      "status": "complete",
+      "market": {
+        "horizon_steps": 30,
+        "initial_order_shares": 100000,
+        "initial_mid_price": 100.0,
+        "full_spread_bps": 6.0,
+        "liquidity_shares": 20000,
+        "volatility_bps": 2.0,
+        "temporary_impact_bps_per_liquidity_unit": 2.0,
+        "permanent_impact_bps_per_liquidity_unit": 0.6,
+        "max_trade_per_step": 10000,
+        "fee_bps": 0.3,
+        "terminal_penalty_per_share": 0.25,
+        "enforce_completion": true
+      },
+      "q_learning": {
+        "alpha": 0.3,
+        "gamma": 1.0,
+        "epsilon_start": 0.25,
+        "epsilon_min": 0.02,
+        "epsilon_decay": 0.99,
+        "action_multipliers": [
+          0.0,
+          0.5,
+          1.0,
+          1.5,
+          2.0
+        ],
+        "all_other_bins_unchanged": true
+      },
+      "encoding_change": {
+        "control": "exact integer own remaining_shares",
+        "treatment": "own remaining_shares / initial_order_shares binned with edges (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)",
+        "only_changed_state_field": "remaining_shares component",
+        "execution_uses_true_remaining_shares": true,
+        "completion_minimum_uses_true_remaining_shares": true,
+        "not_claimed_markov_sufficient": true
+      },
+      "same_train_seeds_for_both_encodings": [
+        20267103,
+        20267402
+      ],
+      "validation_seeds": [
+        20267403,
+        20267462
+      ],
+      "test_seeds": [
+        20267463,
+        20267562
+      ],
+      "counts": {
+        "train": 300,
+        "validation": 60,
+        "test": 100
+      },
+      "agent_rng_seed_paired": 20267101,
+      "validation_role": "report-only; no parameter or model selection because only one encoding per arm was preregistered",
+      "test_used_for_tuning": false,
+      "smoke": false
+    }
+  }
+}

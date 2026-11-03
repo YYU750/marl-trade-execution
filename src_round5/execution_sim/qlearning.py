@@ -26,6 +26,7 @@ class QLearningConfig:
     spread_bins_bps: tuple[float, ...] = (0.0, 2.0, 4.0, 6.0, 8.0, 12.0, 20.0)
     mid_deviation_bins_bps: tuple[float, ...] = (-100.0, -50.0, -20.0, -10.0, -5.0, -2.0, 0.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
     liquidity_ratio_bins: tuple[float, ...] = (0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0)
+    remaining_ratio_bins: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         for name, value in (("alpha", self.alpha), ("gamma", self.gamma), ("epsilon_start", self.epsilon_start), ("epsilon_min", self.epsilon_min), ("epsilon_decay", self.epsilon_decay)):
@@ -42,6 +43,8 @@ class QLearningConfig:
         self._validate_edges("spread_bins_bps", self.spread_bins_bps, lower=0.0)
         self._validate_edges("mid_deviation_bins_bps", self.mid_deviation_bins_bps)
         self._validate_edges("liquidity_ratio_bins", self.liquidity_ratio_bins, lower=0.0)
+        if self.remaining_ratio_bins:
+            self._validate_edges("remaining_ratio_bins", self.remaining_ratio_bins, lower=0.0, upper=1.0)
 
     @staticmethod
     def _validate_edges(name: str, values: tuple[float, ...], lower: float | None = None, upper: float | None = None) -> None:
@@ -76,9 +79,13 @@ class StateEncoder:
             raise ValueError("observation market values must be finite")
         mid_deviation_bps = (market.mid_price / observation.initial_mid_price - 1.0) * 10_000.0
         liquidity_ratio = market.liquidity_shares / observation.initial_order_shares if observation.initial_order_shares else 0.0
+        remaining_state = int(observation.remaining_shares)
+        if self.config.remaining_ratio_bins:
+            remaining_ratio = observation.remaining_shares / max(1, observation.initial_order_shares)
+            remaining_state = self._bin(remaining_ratio, self.config.remaining_ratio_bins)
         return (
             int(market.steps_remaining),
-            int(observation.remaining_shares),
+            remaining_state,
             self._bin(market.full_spread_bps, self.config.spread_bins_bps),
             self._bin(mid_deviation_bps, self.config.mid_deviation_bins_bps),
             self._bin(liquidity_ratio, self.config.liquidity_ratio_bins),
@@ -234,6 +241,7 @@ class TabularQLearningAgent(Strategy):
                 "spread_bins_bps": list(self.config.spread_bins_bps),
                 "mid_deviation_bins_bps": list(self.config.mid_deviation_bins_bps),
                 "liquidity_ratio_bins": list(self.config.liquidity_ratio_bins),
+                "remaining_ratio_bins": list(self.config.remaining_ratio_bins),
             },
             "epsilon": self.epsilon, "episodes_seen": self.episodes_seen, "frozen": self.frozen,
             "q_table": {"|".join(map(str, key)): values for key, values in sorted(self.q_table.items())},
@@ -257,6 +265,7 @@ class TabularQLearningAgent(Strategy):
             spread_bins_bps=tuple(float(value) for value in raw["spread_bins_bps"]),
             mid_deviation_bins_bps=tuple(float(value) for value in raw["mid_deviation_bins_bps"]),
             liquidity_ratio_bins=tuple(float(value) for value in raw["liquidity_ratio_bins"]),
+            remaining_ratio_bins=tuple(float(value) for value in raw.get("remaining_ratio_bins", ())),
         )
         agent = cls(config=config, seed=0)
         agent.epsilon = float(payload["epsilon"])

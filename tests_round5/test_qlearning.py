@@ -69,6 +69,39 @@ class QLearningTests(unittest.TestCase):
     def test_gamma_one_is_default_for_finite_horizon(self) -> None:
         self.assertEqual(QLearningConfig().gamma, 1.0)
 
+    def test_ratio_aggregation_merges_states_but_keeps_real_order_for_actions(self) -> None:
+        config = QLearningConfig(remaining_ratio_bins=(0.0, 0.25, 0.5, 0.75, 1.0))
+        encoder = StateEncoder(config)
+        first = observation(steps=10, remaining=45_000)
+        second = observation(steps=10, remaining=49_000)
+        self.assertNotEqual(StateEncoder(QLearningConfig()).encode(first), StateEncoder(QLearningConfig()).encode(second))
+        self.assertEqual(encoder.encode(first), encoder.encode(second))
+
+        first_agent = TabularQLearningAgent(config, seed=1)
+        action_index = 2
+        self.assertIn(action_index, first_agent.valid_action_indices(first))
+        self.assertIn(action_index, first_agent.valid_action_indices(second))
+        self.assertEqual(first_agent.encoder.encode(first), first_agent.encoder.encode(second))
+        self.assertEqual(first_agent.action_shares(first, action_index), 4_500.0)
+        self.assertEqual(first_agent.action_shares(second, action_index), 4_900.0)
+        self.assertLessEqual(first_agent.action_shares(first, action_index), first.remaining_shares)
+
+    def test_ratio_aggregation_config_roundtrips_and_legacy_config_loads(self) -> None:
+        config = QLearningConfig(remaining_ratio_bins=(0.0, 0.5, 1.0))
+        agent = TabularQLearningAgent(config, seed=2)
+        agent.freeze()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "aggregated.json"
+            agent.save(path)
+            loaded = TabularQLearningAgent.load(path)
+            self.assertEqual(loaded.config.remaining_ratio_bins, (0.0, 0.5, 1.0))
+
+            payload = agent.to_dict()
+            payload["config"].pop("remaining_ratio_bins")
+            path.write_text(__import__("json").dumps(payload), encoding="utf-8")
+            legacy = TabularQLearningAgent.load(path)
+            self.assertEqual(legacy.config.remaining_ratio_bins, ())
+
     def test_deterministic_training_keeps_action_feasible(self) -> None:
         # No random price shock. A permanent impact makes waiting more expensive;
         # a positive terminal penalty makes leaving inventory unfinished costly.

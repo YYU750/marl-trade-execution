@@ -1,0 +1,4 @@
+﻿encoding,test_n,test_mean_cost_bps,test_sd_cost_bps,test_ci95_low_bps,test_ci95_high_bps,validation_mean_cost_bps,trained_q_states,state_visits_median,state_visits_p90,visited_state_action_pairs,unseen_test_state_step_fraction,zero_pace_action_fraction,mean_requested_shares_per_episode,mean_forced_fill_shares_per_episode,mean_fill_ratio
+exact_inventory,100,7.222067519325037,9.54572131207062,5.328196411010226,9.115938627639848,7.7808388381999025,2952,1.0,3,3215,0.10966666666666666,0.945,10724.26,89275.74,1.0
+coarse_remaining_ratio,100,7.066181925452546,9.382988910892989,5.204596925531376,8.927766925373716,7.653869949696295,493,13,45,1183,0.01,0.705,64910.21,35089.79,1.0
+twap,100,6.014949514942453,6.779887136496465,4.669819907061554,7.360079122823351,,0,0,0,0,0.0,0.0,100000.0,0.0,1.0
