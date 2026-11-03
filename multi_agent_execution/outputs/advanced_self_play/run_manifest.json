@@ -1,0 +1,56 @@
+{
+  "created_utc": "2026-11-03T10:24:00.783961+00:00",
+  "script": "run_advanced_self_play.py",
+  "script_sha256": "7e5ecaacae68f7a21096743d431b58c236c907c1d52e5d7f531fe30dfa31c171",
+  "baseline_script_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
+  "parameters": {
+    "episodes": 500,
+    "training_runs": 5,
+    "eval_seeds": 30,
+    "checkpoint_interval": 100,
+    "fee_bps": 30.0,
+    "seed": 20261103,
+    "output_dir": "outputs/advanced_self_play"
+  },
+  "config": {
+    "window_minutes": 30,
+    "step_seconds": 30,
+    "order_size": 100000.0,
+    "initial_price": 100.0,
+    "half_spread_bps": 2.0,
+    "volatility_bps": 2.5,
+    "temporary_impact_bps_per_slice": 0.35,
+    "permanent_impact_bps_per_slice": 0.2,
+    "market_impact_multiplier": 1.0,
+    "opponent_impact_multiplier": 1.0,
+    "inventory_risk_weight": 0.025,
+    "terminal_unfilled_penalty_bps": 1000.0,
+    "learning_rate": 0.15,
+    "discount": 0.98,
+    "epsilon_start": 0.35,
+    "epsilon_end": 0.05,
+    "horizon_steps": 60,
+    "training_scenarios": [
+      "normal"
+    ],
+    "evaluation_scenarios": {
+      "normal": 1.0,
+      "high_volatility": 2.0
+    }
+  },
+  "method": {
+    "agent_A": "opponent-aware tabular Q-learning",
+    "agent_B": "opponent-aware tabular Q-learning",
+    "simultaneous_action_and_update": true,
+    "checkpoint_evaluation": "frozen cross-play on paired seeds",
+    "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",
+    "claim_boundary": "candidate-set responses are not global optima or Nash equilibria"
+  },
+  "counts": {
+    "training_episode_rows": 2500,
+    "cross_play_rows": 10800,
+    "cross_play_summary_rows": 360,
+    "checkpoint_count_per_run": 6
+  },
+  "elapsed_seconds": 23.781
+}

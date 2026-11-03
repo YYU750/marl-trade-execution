@@ -15,4 +15,11 @@
 
 运行说明、模型假设、实验场景和输出字段见 [multi_agent_execution/README.md](multi_agent_execution/README.md)。模型的状态、动作、奖励和逐步运行流程见 [multi_agent_execution/模型主要运行机制.md](multi_agent_execution/模型主要运行机制.md)。实验结果和训练后的 Q 表保存在 multi_agent_execution/outputs/。
 
+进阶版双 Q-learning 自博弈也已实现为独立实验，训练 A、B 两个学习型策略并评估冻结检查点的交叉对局、训练稳定性和候选集最佳反应；它不改变标准版固定规则对手基准。运行命令：
+
+    cd multi_agent_execution
+    python .\run_advanced_self_play.py
+
+进阶版输出单独保存在 `multi_agent_execution/outputs/advanced_self_play/`。完整运行方式与研究边界见项目说明。
+
 本项目是可复现的模拟研究，不连接实时行情、账户或真实下单接口。研究假设需要通过运行结果检验，不应将模拟结论解读为真实交易建议。
