@@ -1,7 +1,7 @@
 {
   "trace_type": "illustrative simultaneous A/B learning trajectory",
   "not_part_of_aggregate_evaluation": true,
-  "source_checkpoint_file": "C:\\Users\\kuku\\AppData\\Local\\Temp\\codex-marl-upload-wuxinhan1\\multi_agent_execution\\outputs\\advanced_self_play\\checkpoint_qtables_run1.json",
+  "source_checkpoint_file": "outputs/advanced_self_play/checkpoint_qtables_run1.json",
   "checkpoint_episode": 500,
   "seed": 20261103,
   "scenario": "normal",

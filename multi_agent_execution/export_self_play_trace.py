@@ -68,10 +68,16 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     write_csv(args.output, trace_rows)
+    try:
+        checkpoint_label = args.checkpoint_file.resolve().relative_to(
+            Path(__file__).resolve().parent
+        ).as_posix()
+    except ValueError:
+        checkpoint_label = args.checkpoint_file.name
     summary = {
         "trace_type": "illustrative simultaneous A/B learning trajectory",
         "not_part_of_aggregate_evaluation": True,
-        "source_checkpoint_file": str(args.checkpoint_file.resolve()),
+        "source_checkpoint_file": checkpoint_label,
         "checkpoint_episode": args.checkpoint,
         "seed": args.seed,
         "scenario": args.scenario,
