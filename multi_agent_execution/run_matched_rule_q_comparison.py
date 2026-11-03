@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import run_standard_benchmark as sim
-from schedule_aware_q import ScheduleAwareQLearningAgent
+from schedule_aware_q import ScheduleAwareQLearningAgent, ThresholdAlignedDoubleQAgent
 
 
 ROOT = Path(__file__).resolve().parent
@@ -33,13 +33,30 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-episodes", type=int, default=1200)
     parser.add_argument("--training-runs", type=int, default=5)
+    parser.add_argument("--rule-guided-episodes", type=int, default=10000,
+                        help="episodes per seed for threshold-aligned rule-guided Double Q")
+    parser.add_argument("--demonstration-episodes", type=int, default=2500,
+                        help="dynamic-rule trajectories per seed for Monte Carlo Q initialization")
     parser.add_argument("--eval-seeds", type=int, default=50)
     parser.add_argument("--fee-bps", type=float, default=30.0)
     parser.add_argument("--seed", type=int, default=20261104)
+    parser.add_argument("--training-seed", type=int, default=None,
+                        help="separate master seed for training; defaults to --seed")
+    parser.add_argument("--improvement-margins", default="0,0.1,0.25,0.5,1,2,5",
+                        help="comma-separated Q advantage thresholds in bp")
     parser.add_argument("--output-dir", type=Path, default=OUT_DEFAULT)
     args = parser.parse_args()
-    if min(args.train_episodes, args.training_runs, args.eval_seeds) < 1:
-        parser.error("train-episodes, training-runs, and eval-seeds must be positive")
+    try:
+        margins = [float(x) for x in args.improvement_margins.split(",")]
+    except ValueError:
+        parser.error("improvement-margins must be comma-separated numbers")
+    if not margins or any(x < 0 for x in margins):
+        parser.error("improvement-margins must contain non-negative values")
+    args.improvement_margins = tuple(sorted(set(margins)))
+    if min(args.train_episodes, args.training_runs, args.rule_guided_episodes,
+           args.demonstration_episodes,
+           args.eval_seeds) < 1:
+        parser.error("training episodes, runs, and eval-seeds must be positive")
     if args.fee_bps < 0:
         parser.error("fee-bps cannot be negative")
     return args
@@ -84,7 +101,8 @@ def train_candidate(run_id: int, args: argparse.Namespace,
     # market mechanics and evaluation config remain unchanged.
     learning_config = replace(environment_config, inventory_risk_weight=0.0)
     agent = ScheduleAwareQLearningAgent(learning_config, opponent_aware=True)
-    training_seed = args.seed + 50_000 + run_id * 10_000
+    training_master_seed = args.training_seed if args.training_seed is not None else args.seed
+    training_seed = training_master_seed + 50_000 + run_id * 10_000
     opponent_rng = random.Random(training_seed)
     for episode in range(args.train_episodes):
         epsilon = learning_config.epsilon_start + (
@@ -95,6 +113,64 @@ def train_candidate(run_id: int, args: argparse.Namespace,
         sim.run_episode(
             "G3_opponent_aware_Q", opponent_name, args.fee_bps,
             training_seed + episode * 37 + 11, learning_config, agent, epsilon,
+        )
+    return agent
+
+
+def train_rule_guided_candidate(run_id: int, args: argparse.Namespace,
+                                environment_config: sim.Config) -> ThresholdAlignedDoubleQAgent:
+    learning_config = replace(
+        environment_config, inventory_risk_weight=0.0, learning_rate=0.08,
+        epsilon_start=0.30, epsilon_end=0.03,
+    )
+    training_master_seed = args.training_seed if args.training_seed is not None else args.seed
+    training_seed = training_master_seed + 500_000 + run_id * 100_000
+    training_rng = random.Random(training_seed)
+    agent = ThresholdAlignedDoubleQAgent(
+        learning_config, opponent_aware=True, seed=training_seed + 17,
+    )
+    # Initialize the dynamic-rule action values from separate training-only
+    # Monte Carlo demonstrations. Evaluation seeds are generated elsewhere.
+    for demo_idx in range(args.demonstration_episodes):
+        opponent_name = training_rng.choice(TEST_OPPONENTS)
+        volatility_multiplier = 2.0 if training_rng.random() < 0.5 else 1.0
+        scenario = "high_volatility" if volatility_multiplier > 1.0 else "normal"
+        demo_seed = training_seed + demo_idx * 59 + 37
+        demo = sim.run_episode(
+            "G1_dynamic_rule", opponent_name, args.fee_bps, demo_seed,
+            learning_config, trace_enabled=True, scenario_name=scenario,
+            volatility_multiplier=volatility_multiplier,
+        )
+        returns = [0.0] * len(demo.trace)
+        running_return = 0.0
+        for idx in range(len(demo.trace) - 1, -1, -1):
+            row = demo.trace[idx]
+            running_return = float(row["step_reward"]) + learning_config.discount * running_return
+            if idx == len(demo.trace) - 1:
+                running_return -= (float(row["A_remaining_after"]) / learning_config.order_size
+                                   * learning_config.terminal_unfilled_penalty_bps)
+            returns[idx] = running_return
+        for idx, row in enumerate(demo.trace):
+            obs = sim.make_observation(
+                int(row["t"]) - 1, float(row["A_remaining_before"]),
+                float(row["mid_before"]), learning_config.initial_price,
+                float(row["B_previous_qty"]), learning_config,
+                volatility_multiplier,
+            )
+            action = min(range(len(sim.ACTIONS)),
+                         key=lambda i: abs(sim.ACTIONS[i] - float(row["A_action_multiple"])))
+            agent.warm_start(obs, action, returns[idx])
+    for episode in range(args.rule_guided_episodes):
+        epsilon = learning_config.epsilon_start + (
+            learning_config.epsilon_end - learning_config.epsilon_start
+        ) * episode / max(args.rule_guided_episodes - 1, 1)
+        opponent_name = training_rng.choice(TEST_OPPONENTS)
+        volatility_multiplier = 2.0 if training_rng.random() < 0.5 else 1.0
+        scenario = "high_volatility" if volatility_multiplier > 1.0 else "normal"
+        sim.run_episode(
+            "G3_opponent_aware_Q", opponent_name, args.fee_bps,
+            training_seed + episode * 53 + 29, learning_config, agent, epsilon,
+            scenario_name=scenario, volatility_multiplier=volatility_multiplier,
         )
     return agent
 
@@ -177,10 +253,11 @@ def build_findings(summary: list[dict[str, Any]], differences: list[dict[str, An
     lines = [
         "# 规则策略与 Q-learning 配对比较",
         "",
-        f"- 运行参数：手续费 {args.fee_bps:g} bp；改进候选训练 {args.training_runs} 个种子 × {args.train_episodes} 回合；每个固定 B 对手/场景 {args.eval_seeds} 个配对评估种子。",
+        f"- 运行参数：手续费 {args.fee_bps:g} bp；成本对齐候选训练 {args.training_runs} 个种子 × {args.train_episodes} 回合，阈值对齐双 Q 每个种子先用 {args.demonstration_episodes} 条规则轨迹初始化，再训练 {args.rule_guided_episodes} 回合；每个固定 B 对手/场景 {args.eval_seeds} 个配对评估种子。",
         "- 固定 TWAP、动态规则、历史 G2/G3、当前双边自博弈 A 策略及改进候选 Q 策略均调用同一个 run_standard_benchmark.run_episode 市场模拟器。",
         "- 每个 B 对手、波动场景和评估种子对所有 A 策略完全相同；策略随机数、对手随机数和市场冲击使用隔离随机流。费用、母单、期限、价差、冲击和成交假设相同。",
         "- 改进候选使用紧凑的时间/执行进度状态编码、全部测试对手训练、成本对齐的 TD 奖励，并修复未尝试动作的零初始化 Q 值虚高问题。实际市场清算与评价口径没有改变。",
+        "- 阈值对齐双 Q 候选使用 5 步时间阶段、规则阈值对齐的状态边界、双 Q 表降低最大化偏差，并用训练集动态规则轨迹的 Monte Carlo 回报初始化；训练覆盖两种波动场景和全部固定对手。",
         "- 成本差定义为学习策略减规则策略；负值有利于学习策略。区间是按配对评估种子计算的近似 95% 区间；训练种子先在同一评估种子内取均值。",
         "",
         "## 各策略汇总",
@@ -272,6 +349,16 @@ def main() -> None:
         agent = train_candidate(run_id, args, config)
         strategies.append((f"cost_aligned_schedule_Q_run{run_id}", run_id, agent))
 
+    rule_guided_agents: list[tuple[int, ThresholdAlignedDoubleQAgent]] = []
+    for run_id in range(1, args.training_runs + 1):
+        print(f"Training threshold-aligned Double Q candidate {run_id}/{args.training_runs} ...", flush=True)
+        agent = train_rule_guided_candidate(run_id, args, config)
+        rule_guided_agents.append((run_id, agent))
+    improvement_margins = args.improvement_margins
+    for margin in improvement_margins:
+        for run_id, agent in rule_guided_agents:
+            strategies.append((f"rule_guided_double_Q_m{margin:g}_run{run_id}", run_id, agent))
+
     raw: list[dict[str, Any]] = []
     seed_by_cell: dict[tuple[int, str, int], int] = {}
     for scenario_idx, (scenario, volatility_multiplier) in enumerate(SCENARIOS):
@@ -281,6 +368,9 @@ def main() -> None:
                     args.seed + 2_000_000 + scenario_idx * 100_000 + opponent_idx * 1_000 + eval_idx * 101
                 )
     for strategy, training_run, agent in strategies:
+        if strategy.startswith("rule_guided_double_Q_m") and isinstance(agent, ThresholdAlignedDoubleQAgent):
+            margin_text = strategy.split("_m", 1)[1].split("_run", 1)[0]
+            agent.improvement_margin = float(margin_text)
         if strategy in RULES:
             policy_name = strategy
         elif strategy.startswith("G2_"):
@@ -307,9 +397,12 @@ def main() -> None:
     manifest = {
         "fee_bps": args.fee_bps,
         "train_episodes": args.train_episodes,
+        "rule_guided_episodes": args.rule_guided_episodes,
+        "demonstration_episodes": args.demonstration_episodes,
         "training_runs": args.training_runs,
         "evaluation_seeds_per_opponent_scenario": args.eval_seeds,
         "master_seed": args.seed,
+        "training_master_seed": args.training_seed if args.training_seed is not None else args.seed,
         "scenarios": {name: multiplier for name, multiplier in SCENARIOS},
         "B_opponents": list(TEST_OPPONENTS),
         "paired_seed_schedule": "same exogenous market seed for every A policy in each B opponent/scenario/evaluation cell",
@@ -326,6 +419,11 @@ def main() -> None:
             "training on all fixed test-opponent types",
             "remove inventory-risk shaping from TD reward to align with implementation-shortfall scorecard",
             "bootstrap only from tried feasible actions to avoid zero-initialized optimistic bias",
+            "rule-threshold-aligned state bins with exact time step and observed volatility regime",
+            "Double Q tables to reduce maximization bias",
+            "dynamic-rule action prior for untrained states; training on all test opponents and both volatility regimes",
+            "Monte Carlo warm-start from dynamic-rule training demonstrations",
+            f"evaluation-only conservative policy-improvement margins: {list(improvement_margins)} bp",
         ],
         "counts": {"raw_evaluations": len(raw), "summary_rows": len(summary),
                    "paired_difference_rows": len(differences)},

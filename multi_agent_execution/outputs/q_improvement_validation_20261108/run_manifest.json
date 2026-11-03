@@ -1,0 +1,46 @@
+{
+  "fee_bps": 30.0,
+  "train_episodes": 1200,
+  "rule_guided_episodes": 10000,
+  "demonstration_episodes": 2500,
+  "training_runs": 5,
+  "evaluation_seeds_per_opponent_scenario": 50,
+  "master_seed": 20261108,
+  "training_master_seed": 20261107,
+  "scenarios": {
+    "normal": 1.0,
+    "high_volatility": 2.0
+  },
+  "B_opponents": [
+    "twap",
+    "frontloaded",
+    "backloaded",
+    "bursty",
+    "randomized"
+  ],
+  "paired_seed_schedule": "same exogenous market seed for every A policy in each B opponent/scenario/evaluation cell",
+  "evaluation_environment": "run_standard_benchmark.run_episode with Config defaults",
+  "training_inventory_risk_weight": 0.0,
+  "code_sha256": {
+    "comparison_script": "42c16e1c3ffeedf35fd737e4b526df1c7051a89c64f26c6a873c9529e76d9b30",
+    "market_simulator": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
+    "schedule_aware_q_agent": "15d64ccd6b08862b60d89bc3a5a845f135cf92a6a5926233713eca3924f9ff1e",
+    "advanced_self_play": "f12dd96aaef9cf6d4139e97009b5cf6c6986371beb56d3116e2c7fb5c434a515"
+  },
+  "improved_q_changes": [
+    "schedule-aware compact state abstraction",
+    "training on all fixed test-opponent types",
+    "remove inventory-risk shaping from TD reward to align with implementation-shortfall scorecard",
+    "bootstrap only from tried feasible actions to avoid zero-initialized optimistic bias",
+    "rule-threshold-aligned state bins with exact time step and observed volatility regime",
+    "Double Q tables to reduce maximization bias",
+    "dynamic-rule action prior for untrained states; training on all test opponents and both volatility regimes",
+    "Monte Carlo warm-start from dynamic-rule training demonstrations",
+    "evaluation-only conservative policy-improvement margins: [0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0] bp"
+  ],
+  "counts": {
+    "raw_evaluations": 24500,
+    "summary_rows": 490,
+    "paired_difference_rows": 940
+  }
+}

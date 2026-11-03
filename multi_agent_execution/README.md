@@ -92,6 +92,8 @@ python .\run_matched_rule_q_comparison.py
 
 对照产物写入 `outputs/matched_rule_q_comparison/`；原始结果、分层汇总、配对成本差和运行参数分别保存在 CSV 与 `findings.md` 中。不能把学习候选尚未胜过规则策略的结果包装成强化学习更优；当前模型更适合作为策略互动与学习过程研究。
 
+进一步尝试的规则先验双 Q 使用阈值对齐状态、双 Q 更新、动态规则训练轨迹初始化和保守策略改进门槛。独立留出集上该版本成本为正常波动 38.379 bp、两倍波动 35.806 bp；动态规则为 38.364 bp、35.802 bp。将训练增加到每个种子 30,000 回合后，Q 仍未稳定超过规则。完整调参与留出结果见 `outputs/q_algorithm_tuning.md`；这些结果表明它已能接近规则基准，目前没有证据证明它更优。
+
 ## 输出目录
 
 默认写入 `outputs/advanced_self_play/`：
