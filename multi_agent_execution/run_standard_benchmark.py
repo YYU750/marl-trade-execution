@@ -142,9 +142,16 @@ class QLearningAgent:
         self.q: dict[tuple[int, ...], list[float]] = q_table if q_table is not None else {}
         self.action_visits: dict[tuple[int, ...], list[int]] = {}
         self.visited: set[tuple[int, ...]] = set()
+        self.frozen = False
+
+    def freeze(self) -> None:
+        """Make policy queries read-only and reject subsequent learning updates."""
+        self.frozen = True
 
     def values(self, obs: Observation) -> list[float]:
         state = discretize_state(obs, self.opponent_aware)
+        if self.frozen:
+            return self.q.get(state, [0.0] * len(ACTIONS))
         self.visited.add(state)
         return self.q.setdefault(state, [0.0] * len(ACTIONS))
 
@@ -169,6 +176,8 @@ class QLearningAgent:
         return rng.choice(tied)
 
     def update(self, obs: Observation, action: int, reward: float, next_obs: Observation | None) -> None:
+        if self.frozen:
+            raise RuntimeError("Cannot update a frozen Q-learning policy")
         state = discretize_state(obs, self.opponent_aware)
         self.visited.add(state)
         current = self.q.setdefault(state, [0.0] * len(ACTIONS))
@@ -227,7 +236,15 @@ class OpponentAgent:
             multiple = self.rng.choice((0.5, 1.5))
         else:
             raise ValueError(f"Unknown opponent: {self.name}")
-        return min(remaining, c.base_slice * multiple)
+        desired = min(remaining, c.base_slice * multiple)
+        if self.name == "randomized":
+            # Keep the stochastic policy's chosen pace where feasible, but
+            # enforce the same 2x maximum-child-order completion constraint
+            # used by A so B cannot become an unintended unfilled-order case.
+            steps_after_this = max(0, c.horizon - t - 1)
+            required_now = max(0.0, remaining - steps_after_this * ACTIONS[-1] * c.base_slice)
+            desired = min(remaining, max(desired, required_now))
+        return desired
 
 
 def make_observation(t: int, remaining: float, mid: float, initial: float,
@@ -865,6 +882,7 @@ def run_experiment(episodes: int, seeds: int, seed: int, config: Config) -> None
             trained[(fee, learner_name)] = agent
             q_path = OUT / f"qtable_{learner_name}_{int(fee)}bps.json"
             q_path.write_text(json.dumps(serialize_q(agent), ensure_ascii=False, indent=2), encoding="utf-8")
+            agent.freeze()
 
         for policy in POLICIES:
             q_agent = None if policy.startswith(("G0", "G1")) else trained[(fee, policy)]

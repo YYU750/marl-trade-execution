@@ -294,6 +294,7 @@ def instantiate_snapshot(config: Config, snap: dict[str, Any]) -> QLearningAgent
     agent = ScheduleAwareQLearningAgent(config, opponent_aware=True)
     agent.q = {state: values[:] for state, values in snap["q"].items()}
     agent.action_visits = {state: counts[:] for state, counts in snap["visits"].items()}
+    agent.freeze()
     return agent
 
 

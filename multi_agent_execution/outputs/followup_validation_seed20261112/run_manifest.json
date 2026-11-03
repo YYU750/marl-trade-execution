@@ -1,0 +1,54 @@
+{
+  "fee_bps": 30.0,
+  "training_master_seed": 20261107,
+  "test_master_seed": 20261112,
+  "training_run_id": 1,
+  "training_parameters": {
+    "learning_rate": 0.08,
+    "epsilon_start": 0.3,
+    "epsilon_end": 0.03,
+    "inventory_risk_weight_during_learning": 0.0,
+    "discount_gamma": 0.98
+  },
+  "demonstration_episodes": 2500,
+  "q_training_episodes": 10000,
+  "fixed_improvement_margin_bps": 5.0,
+  "margin_retuned_on_test": false,
+  "evaluation_seeds_per_opponent_scenario": 50,
+  "B_opponents": [
+    "twap",
+    "frontloaded",
+    "backloaded",
+    "bursty",
+    "randomized"
+  ],
+  "scenarios": {
+    "normal": 1.0,
+    "high_volatility": 2.0
+  },
+  "paired_seed_schedule": "same seed for TWAP, dynamic rule, and Double Q at each B-opponent/scenario/evaluation cell",
+  "discount_gamma": 0.98,
+  "target_formula": "r + gamma * Q_evaluator(s', argmax_a Q_chosen(s', a)); terminal target=r",
+  "randomized_B_completion_constraint": "required_now=max(0,remaining-steps_after*2*base_slice); sampled quantity=max(sampled quantity, required_now)",
+  "randomized_B_completion_control": {
+    "trials": 1000,
+    "old_incomplete_episodes": 438,
+    "old_mean_unfilled_shares": 2555.000000000019,
+    "repaired_incomplete_episodes": 0
+  },
+  "Q_table_frozen_and_unchanged": true,
+  "Q_table_digest_before": "3958204c43eaa5fa14a9f0b9cccfe0047eaa23ba05e86ccc501bfbafdebba2b9",
+  "Q_table_digest_after": "3958204c43eaa5fa14a9f0b9cccfe0047eaa23ba05e86ccc501bfbafdebba2b9",
+  "selected_policy_sha256": "0e34eb226fee1535eda6e0591aeab9fe76c9a98c9e70f75137f3743fcc4e29e6",
+  "Q_state_count": 5598,
+  "counts": {
+    "raw_rows": 1500,
+    "paired_cells_per_scenario": 250
+  },
+  "code_sha256": {
+    "followup_script": "c42618c2d4a2ce0170e09a73833f3c6a3b159b3379e0a1aebadc0b5571e1b04a",
+    "simulator": "15bce16ad613243c990272ac477894cdf0709b7247e70d17bf285bcfd92070ed",
+    "double_q": "ff598073f2314d64d355385a19195ba2901aaa5bae3664f321f75932c0e297c9",
+    "comparison_trainer": "ec998243427beb7b0ed4cd08f2e534bee840d756dabbd02f2b685ec4fba9fbdb"
+  }
+}

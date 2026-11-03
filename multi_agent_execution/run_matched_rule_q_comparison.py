@@ -371,6 +371,8 @@ def main() -> None:
         if strategy.startswith("rule_guided_double_Q_m") and isinstance(agent, ThresholdAlignedDoubleQAgent):
             margin_text = strategy.split("_m", 1)[1].split("_run", 1)[0]
             agent.improvement_margin = float(margin_text)
+        if agent is not None:
+            agent.freeze()
         if strategy in RULES:
             policy_name = strategy
         elif strategy.startswith("G2_"):

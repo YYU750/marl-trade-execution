@@ -1,0 +1,11 @@
+﻿scenario,B_opponent,agreement_rate,matched_steps,total_steps
+high_volatility,backloaded,0.9493333333333334,2848,3000
+high_volatility,bursty,1.0,3000,3000
+high_volatility,frontloaded,0.9516666666666667,2855,3000
+high_volatility,randomized,0.9623333333333334,2887,3000
+high_volatility,twap,1.0,3000,3000
+normal,backloaded,0.9456666666666667,2837,3000
+normal,bursty,1.0,3000,3000
+normal,frontloaded,0.988,2964,3000
+normal,randomized,0.962,2886,3000
+normal,twap,0.9463333333333334,2839,3000

@@ -1,0 +1,11 @@
+﻿scenario,B_opponent,episodes,mean_B_completion
+normal,twap,50,0.9999999999999994
+normal,frontloaded,50,0.9999999999999994
+normal,backloaded,50,0.9999999999999989
+normal,bursty,50,1.0
+normal,randomized,50,1.0
+high_volatility,twap,50,0.9999999999999994
+high_volatility,frontloaded,50,0.9999999999999994
+high_volatility,backloaded,50,0.9999999999999989
+high_volatility,bursty,50,1.0
+high_volatility,randomized,50,1.0

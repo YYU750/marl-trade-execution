@@ -48,6 +48,8 @@ class ScheduleAwareQLearningAgent(QLearningAgent):
 
     def values(self, obs: Observation) -> list[float]:
         state = self.state_key(obs)
+        if self.frozen:
+            return self.q.get(state, [0.0] * len(ACTIONS))
         self.visited.add(state)
         return self.q.setdefault(state, [0.0] * len(ACTIONS))
 
@@ -67,6 +69,8 @@ class ScheduleAwareQLearningAgent(QLearningAgent):
 
     def update(self, obs: Observation, action: int, reward: float,
                next_obs: Observation | None) -> None:
+        if self.frozen:
+            raise RuntimeError("Cannot update a frozen Q-learning policy")
         state = self.state_key(obs)
         self.visited.add(state)
         current = self.q.setdefault(state, [0.0] * len(ACTIONS))
@@ -148,6 +152,11 @@ class ThresholdAlignedDoubleQAgent(ScheduleAwareQLearningAgent):
 
     def values(self, obs: Observation) -> list[float]:
         state = self.state_key(obs)
+        if self.frozen:
+            zeros = [0.0] * len(ACTIONS)
+            qa = self.qa.get(state, zeros)
+            qb = self.qb.get(state, zeros)
+            return [(a + b) / 2.0 for a, b in zip(qa, qb)]
         self.visited.add(state)
         qa = self.qa.setdefault(state, [0.0] * len(ACTIONS))
         qb = self.qb.setdefault(state, [0.0] * len(ACTIONS))
@@ -161,6 +170,8 @@ class ThresholdAlignedDoubleQAgent(ScheduleAwareQLearningAgent):
     def warm_start(self, obs: Observation, action: int, return_to_go: float,
                    sample_count: int = 1) -> None:
         """Initialize expert-action values from training-only demonstrations."""
+        if self.frozen:
+            raise RuntimeError("Cannot warm-start a frozen Double Q policy")
         state = self.state_key(obs)
         self.visited.add(state)
         _, min_index = feasible_action_floor(obs, self.config)
@@ -188,7 +199,8 @@ class ThresholdAlignedDoubleQAgent(ScheduleAwareQLearningAgent):
         visits = self.action_visits.get(state, [0] * len(ACTIONS))
         candidates = [i for i in allowed if visits[i] > 0]
         prior = max(self._rule_prior(obs), allowed_min_index)
-        self.prior_actions[state] = prior
+        if not self.frozen:
+            self.prior_actions[state] = prior
         if prior in allowed and prior not in candidates:
             candidates.append(prior)
         best = max(values[i] for i in candidates)
@@ -203,6 +215,8 @@ class ThresholdAlignedDoubleQAgent(ScheduleAwareQLearningAgent):
 
     def update(self, obs: Observation, action: int, reward: float,
                next_obs: Observation | None) -> None:
+        if self.frozen:
+            raise RuntimeError("Cannot update a frozen Double Q policy")
         state = self.state_key(obs)
         current_a = self.qa.setdefault(state, [0.0] * len(ACTIONS))
         current_b = self.qb.setdefault(state, [0.0] * len(ACTIONS))
@@ -226,11 +240,16 @@ class ThresholdAlignedDoubleQAgent(ScheduleAwareQLearningAgent):
             best_actions = [i for i in candidates if abs(chosen[next_state][i] - best) < 1e-12]
             best_action = self.update_rng.choice(best_actions)
             future = evaluator[next_state][best_action]
-        target = reward + self.config.discount * future
+        target = self.td_target(reward, future, terminal=next_obs is None)
         chosen.setdefault(state, [0.0] * len(ACTIONS))[action] += (
             self.config.learning_rate * (target - chosen[state][action])
         )
         self.q[state] = [(a + b) / 2.0 for a, b in zip(current_a, current_b)]
+
+    def td_target(self, reward: float, future_value: float = 0.0,
+                  terminal: bool = False) -> float:
+        """Double-Q Bellman target: r + gamma * V(s'), with no terminal bootstrap."""
+        return reward if terminal else reward + self.config.discount * future_value
 
     def initial_state_max_q(self) -> float:
         initial = Observation(
