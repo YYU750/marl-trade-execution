@@ -1,0 +1,2 @@
+﻿fee_bps,agent,episodes,rolling_return_last_100,rolling_return_previous_100,initial_state_max_q,mean_max_q_over_visited_states,visited_state_count
+0.0,G2_Q_learning,1200,-0.3017145833333194,-0.2984916666667107,0.0,-0.022593590959555186,241

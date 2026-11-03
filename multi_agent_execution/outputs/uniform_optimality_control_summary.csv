@@ -1,0 +1,2 @@
+﻿episodes,evaluation_seeds,market,own_temporary_impact_bps_per_slice,theoretical_uniform_cost_bps,mean_G0_TWAP_cost_bps,mean_G2_cost_bps,mean_G2_minus_G0_bps,sd_G2_minus_G0_bps,mean_G0_completion_rate,mean_G2_completion_rate
+1200,30,"zero drift, zero spread, zero fee, zero permanent impact, opponent impact off",0.35,0.175,0.17499999999441207,0.3354166666716337,0.16041666667722165,0.0,1.0,1.0

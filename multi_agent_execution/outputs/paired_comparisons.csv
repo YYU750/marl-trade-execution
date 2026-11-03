@@ -1,91 +1,91 @@
 ﻿fee_bps,scenario,B_opponent,research_question,strategy,baseline,paired_runs,mean_cost_difference_bps_strategy_minus_baseline,approx_95pct_ci_low_bps,approx_95pct_ci_high_bps,mean_completion_rate_difference
-10.0,normal,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.1909065062412432,-0.25767970553719366,0.6394927180196801,0.0
-10.0,normal,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.05080280900826596,-1.5525709374458454,1.6541765554623773,0.0
-10.0,normal,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.0016232974960156928,-0.04373297479135445,0.04048637979932307,0.0
-10.0,normal,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.23737864833983668,-0.1945921351636753,0.6693494318433486,0.0
-10.0,normal,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-0.186679774426842,-1.7642387682326415,1.3908792193789574,0.0
-10.0,normal,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.10842025532812698,-0.02767468295271268,0.24451519360896662,0.0
-10.0,normal,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.19803148179246358,-0.2699270124897638,0.6659899760746909,0.0
-10.0,normal,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-0.08293360234482942,-1.707170717219907,1.541303512530248,0.0
-10.0,normal,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.025961864583035302,-0.027352145896882,0.07927587506295261,0.0
-10.0,normal,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.1981143737385486,-0.25256267633078444,0.6487914238078816,0.0
-10.0,normal,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.0477438635457054,-1.5564132462950817,1.6519009733864927,0.0
-10.0,normal,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.02037796226532045,-0.7358409563129407,0.6950850317822999,0.0
-10.0,normal,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.1885227881989562,-0.26852964729456963,0.645575223692482,0.0
-10.0,normal,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.03649218829289911,-1.586689397842528,1.659673774428326,0.0
-10.0,normal,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.04324571673438236,-0.2706259627438575,0.18413452927509277,0.0
-10.0,high_volatility,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.783973412946078,-0.29358946541461695,1.861536291306773,0.0
-10.0,high_volatility,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.8242150077647514,-5.344193569642375,1.6957635541128717,0.0
-10.0,high_volatility,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.0057036023360569265,-0.08463446868117755,0.09604167335329139,0.0
-10.0,high_volatility,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.8012278252223322,-0.24536038538286276,1.847816035827527,0.0
-10.0,high_volatility,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-2.0333622230473227,-5.510665610588315,1.4439411644936695,0.0
-10.0,high_volatility,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.2557844865736701,-0.03097459331040192,0.542543566457742,0.0
-10.0,high_volatility,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.7947339033119729,-0.2974134066892564,1.8868812133132022,0.0
-10.0,high_volatility,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.9804781873257185,-5.52594934093946,1.5649929662880238,0.0
-10.0,high_volatility,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.01774006805647499,-0.06863449591374084,0.10411463202669081,0.0
-10.0,high_volatility,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.7743190245470173,-0.30441286001978707,1.8530509091138216,0.0
-10.0,high_volatility,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.8126153534168872,-5.332545729195055,1.7073150223612805,0.0
-10.0,high_volatility,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.7840622441268231,-0.8705794915582771,2.4387039798119234,0.0
-10.0,high_volatility,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.7739831940871692,-0.29419710536199084,1.8421634935363294,0.0
-10.0,high_volatility,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.8165923794557508,-5.349525542857147,1.716340783945645,0.0
-10.0,high_volatility,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.01171672754155993,-0.4133111574068042,0.4367446124899241,0.0
-30.0,normal,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.00884711526638604,-0.24741029077642657,0.26510452130919865,0.0
-30.0,normal,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.2305764233605525,1.160320256648493,3.300832590072612,0.0
-30.0,normal,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.015852182010167817,-0.060045974224926545,0.02834161020459091,0.0
-30.0,normal,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.07638738473965805,-0.16381248084548877,0.31658725032480484,0.0
-30.0,normal,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.9796020561794558,0.9284802563194408,3.030723856039471,0.0
-30.0,normal,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.08394180750603807,-0.17358390557164932,0.005700290559573204,0.0
-30.0,normal,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.0002219324739538564,-0.2703118390662722,0.2707557040141799,0.0
-30.0,normal,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.1096914333720305,1.0249339338290022,3.1944489329150585,0.0
-30.0,normal,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.034495926841312516,-0.07604284541357395,0.007050991730948926,0.0
-30.0,normal,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.014573933069546996,-0.24391804640433742,0.27306591254343143,0.0
-30.0,normal,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.2267949073349795,1.1514395904032568,3.3021502242667022,0.0
-30.0,normal,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-1.287755187268017,-2.0311254544910167,-0.5443849200450177,0.0
-30.0,normal,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.027473365783088847,-0.22091200671410452,0.27585873828028223,0.0
-30.0,normal,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.2276978000585297,1.1866446639401396,3.26875093617692,0.0
-30.0,normal,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.3111218365227471,-0.49628065544804223,-0.12596301759745196,0.0
-30.0,high_volatility,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.049161255377238436,-0.6420641059108226,0.5437415951563457,0.0
-30.0,high_volatility,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.9611460466761503,0.5762003914430545,5.346091701909247,0.0
-30.0,high_volatility,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.038538523961998195,-0.09626746757060103,0.019190419646604652,0.0
-30.0,high_volatility,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.052158553369338986,-0.5013735448246267,0.6056906515633046,0.0
-30.0,high_volatility,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.668928924902372,0.3344016120748976,5.003456237729846,0.0
-30.0,high_volatility,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.17673074662827257,-0.4484606714915097,0.09499917823496454,0.0
-30.0,high_volatility,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.12365374760066732,-0.7345263979851937,0.4872189027838591,0.0
-30.0,high_volatility,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.9126721539978933,0.5015082151290153,5.323836092866771,0.0
-30.0,high_volatility,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.03208022695437147,-0.09382430355178908,0.029663849643046157,0.0
-30.0,high_volatility,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.04924070538077719,-0.6429302852774431,0.5444488745158887,0.0
-30.0,high_volatility,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.973715780906956,0.5881043732811335,5.359327188532778,0.0
-30.0,high_volatility,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-1.7610749911115176,-3.252946228408473,-0.2692037538145622,0.0
-30.0,high_volatility,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.039782348360662564,-0.6313848027196457,0.5518201059983207,0.0
-30.0,high_volatility,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.958769532602841,0.6001140106963496,5.317425054509332,0.0
-30.0,high_volatility,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.49390548460722244,-0.878515029433936,-0.10929593978050889,0.0
-50.0,normal,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.1908157610645373,-0.4246223242115372,0.04299080208246267,0.0
-50.0,normal,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.4253755051235226,0.44813362572559134,2.402617384521454,0.0
-50.0,normal,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.025778724116909756,-0.07518835296347104,0.02363090472965152,0.0
-50.0,normal,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.16594172199406051,-0.40010305606993024,0.06821961208180918,0.0
-50.0,normal,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.2271297631851013,0.2658739002962801,2.1883856260739223,0.0
-50.0,normal,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.12519542539786788,-0.2676863970949397,0.017295546299203907,0.0
-50.0,normal,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.19242516248281968,-0.4325217712139536,0.04767144624831421,0.0
-50.0,normal,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.278235113787514,0.30242830640295615,2.254041921172072,0.0
-50.0,normal,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.023250509788870725,-0.0772716467965183,0.03077062721877685,0.0
-50.0,normal,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.18989539380983209,-0.4236777380721557,0.043886950452491524,0.0
-50.0,normal,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.4222449621936752,0.44642662251615695,2.3980633018711934,0.0
-50.0,normal,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.7104012059568168,-1.443780988498021,0.02297857658438751,0.0
-50.0,normal,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.19053368761423548,-0.42381857521872995,0.042751199990259,0.0
-50.0,normal,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.365673345325039,0.3964727269117655,2.3348739637383122,0.0
-50.0,normal,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.08803464040418921,-0.33138716771197385,0.15531788690359544,0.0
-50.0,high_volatility,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.29917111644003047,-0.757411273437666,0.15906904055760507,0.0
-50.0,high_volatility,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.1389282047777896,-0.9570923427035727,3.234948752259152,0.0
-50.0,high_volatility,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.029010269644597266,-0.09478220243570072,0.03676166314650618,0.0
-50.0,high_volatility,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.242667033193644,-0.6871950126660564,0.20186094627876847,0.0
-50.0,high_volatility,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.9037471915122424,-1.1570591774175278,2.9645535604420123,0.0
-50.0,high_volatility,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.04678274810528578,-0.306747444070763,0.21318194786019146,0.0
-50.0,high_volatility,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.3209040848360563,-0.777479243522557,0.13567107385044447,0.0
-50.0,high_volatility,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.0220642399482547,-1.0780701823961076,3.122198662292617,0.0
-50.0,high_volatility,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.0059807475119754375,-0.057316560372365315,0.0692780553963162,0.0
-50.0,high_volatility,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.29502128486654416,-0.754957562956091,0.16491499322300263,0.0
-50.0,high_volatility,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.138042682258699,-0.953412698676577,3.229498063193975,0.0
-50.0,high_volatility,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.554722470863079,-2.07198368672235,0.9625387449961919,0.0
-50.0,high_volatility,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.3015364287367949,-0.7605746492120019,0.15750179173841206,0.0
-50.0,high_volatility,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.103267845595853,-0.988399480219434,3.1949351714111396,0.0
-50.0,high_volatility,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.0884802512511527,-0.5993965448624663,0.4224360423601609,0.0
+10.0,normal,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.16143026418920037,-0.24871654877018912,0.5715770771485899,0.0
+10.0,normal,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.0828638454307411,-1.4537642279392058,1.619491918800688,0.0
+10.0,normal,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.017558793675464052,-0.1609567203909633,0.12583913304003516,0.0
+10.0,normal,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.18438344430535028,-0.19741341755149697,0.5661803061621975,0.0
+10.0,normal,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-0.13493469342765932,-1.6225978919326687,1.3527285050773499,0.0
+10.0,normal,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.03409445192829379,-0.11070958771680646,0.17889849157339405,0.0
+10.0,normal,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.1455076806751361,-0.2934857966092445,0.5845011579595167,0.0
+10.0,normal,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-0.012578141764527118,-1.563445600584857,1.5382893170558025,0.0
+10.0,normal,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.00671100118965029,-0.12301176632918104,0.10958976394988046,0.0
+10.0,normal,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.15928144301980174,-0.250857596724091,0.5694204827636945,0.0
+10.0,normal,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.08524147445967338,-1.450275882445802,1.6207588313651489,0.0
+10.0,normal,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.029041548786875544,-0.6953522487806553,0.7534353463544065,0.0
+10.0,normal,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.14622253247199135,-0.2604840689253662,0.5529291338693489,0.0
+10.0,normal,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.07735629793452918,-1.4591980255945465,1.613910621463605,0.0
+10.0,normal,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.03751181819879351,-0.156577146972336,0.231600783369923,0.0
+10.0,high_volatility,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.7772178196997352,-0.2619441895725796,1.81637982897205,0.0
+10.0,high_volatility,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.7587264681216377,-5.174458976281041,1.657006040037766,0.0
+10.0,high_volatility,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.02566881701738679,-0.20020291329320783,0.2515405473279814,0.0
+10.0,high_volatility,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.7582570792978521,-0.2584032657512082,1.7749174243469126,0.0
+10.0,high_volatility,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.9225902455572281,-5.339177902878715,1.4939974117642587,0.0
+10.0,high_volatility,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.0920232854213773,-0.19765334532056592,0.38169991616332055,0.0
+10.0,high_volatility,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.8122960222573045,-0.25166582518213365,1.8762578696967425,0.0
+10.0,high_volatility,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.9183589378720454,-5.383074020658563,1.5463561449144723,0.0
+10.0,high_volatility,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.0970359394426133,-0.13608172579580105,0.3301536046810276,0.0
+10.0,high_volatility,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.7624757142320076,-0.2788270282778986,1.8037784567419137,0.0
+10.0,high_volatility,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.736272129331169,-5.148719539444338,1.6761752807819996,0.0
+10.0,high_volatility,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.7544202796154666,-0.7168607507380482,2.2257013099689815,0.0
+10.0,high_volatility,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.8125691585969763,-0.22348927783107264,1.8486275950250253,0.0
+10.0,high_volatility,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,-1.8348824332388798,-5.26872377403401,1.5989589075562503,0.0
+10.0,high_volatility,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.1455452475850748,-0.19717904990643548,0.4882695450765851,0.0
+30.0,normal,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.023988926703421853,-0.211838218325313,0.2598160717321567,0.0
+30.0,normal,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.1919596713886462,1.2156285991459415,3.168290743631351,0.0
+30.0,normal,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.04713981626524036,-0.14574511268194545,0.05146548015146474,0.0
+30.0,normal,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.09387565542686088,-0.12204746516123866,0.3097987760149604,0.0
+30.0,normal,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.923455876411558,0.9750278493775818,2.871883903445534,0.0
+30.0,normal,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.05906647989073086,-0.21237452393782152,0.09424156415635981,0.0
+30.0,normal,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.002132709613235543,-0.2577972918432698,0.2620627110697409,0.0
+30.0,normal,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.095854484979121,1.1071381660005728,3.084570803957669,0.0
+30.0,normal,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.028557358417272857,-0.12156177284480886,0.06444705601026314,0.0
+30.0,normal,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.029486933782769023,-0.2123967518370516,0.27137061940258966,0.0
+30.0,normal,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.189378285873047,1.2100783261489672,3.168678245597127,0.0
+30.0,normal,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-1.2088530009755458,-1.833524521112714,-0.5841814808383777,0.0
+30.0,normal,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.0375806902484964,-0.1886415340161668,0.26380291451315957,0.0
+30.0,normal,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.181297363259072,1.2123560174883796,3.1502387090297645,0.0
+30.0,normal,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.21571078396608254,-0.40195563645169213,-0.02946593148047294,0.0
+30.0,high_volatility,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.01350750455016468,-0.5346290860260086,0.561644095126338,0.0
+30.0,high_volatility,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.8769002457584514,0.6904600295122942,5.063340462004609,0.0
+30.0,high_volatility,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.00903052152630437,-0.22136815249262334,0.2394291955452321,0.0
+30.0,high_volatility,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.08673255552206498,-0.43814400800446546,0.6116091190485954,0.0
+30.0,high_volatility,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.619471704560056,0.4545200279436794,4.784423381176433,0.0
+30.0,high_volatility,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.13473861431548287,-0.40374401965589046,0.13426679102492475,0.0
+30.0,high_volatility,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.06685699814441944,-0.6398493892829206,0.5061353929940816,0.0
+30.0,high_volatility,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.8422785464010487,0.6205157023235821,5.064041390478515,0.0
+30.0,high_volatility,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.005037486296106112,-0.2194487595800341,0.22952373217224634,0.0
+30.0,high_volatility,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.011423788843764982,-0.5418245388247088,0.5646721165122387,0.0
+30.0,high_volatility,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.8866993850098344,0.7004839406873731,5.072914829332296,0.0
+30.0,high_volatility,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-1.6102100198125429,-2.907757966046676,-0.3126620735784096,0.0
+30.0,high_volatility,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.030697877871939384,-0.5081879439587995,0.5695836997026782,0.0
+30.0,high_volatility,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.8677799832741906,0.6933228088272205,5.042237157721161,0.0
+30.0,high_volatility,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.17271721087853933,-0.5182073370147403,0.1727729152576616,0.0
+50.0,normal,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.19958131524520298,-0.4327792796249318,0.03361664913452583,0.0
+50.0,normal,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.378619047310312,0.4505966407337815,2.3066414538868423,0.0
+50.0,normal,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.02870041326056262,-0.11238398966039445,0.05498316313926921,0.0
+50.0,normal,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.16313932111442236,-0.3963898801415322,0.0701112379126875,0.0
+50.0,normal,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.148976564687892,0.2241977583614735,2.0737553710143106,0.0
+50.0,normal,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.07114789570911549,-0.25067768427190673,0.10838189285367573,0.0
+50.0,normal,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.22619881237471706,-0.46894110212534107,0.016543477375906945,0.0
+50.0,normal,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.2942595843225344,0.36446145148670184,2.224057717158367,0.0
+50.0,normal,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.01985813701869314,-0.08463485522082002,0.04491858118343374,0.0
+50.0,normal,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.20035684425988098,-0.43471310939295416,0.03399942087319216,0.0
+50.0,normal,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.3872769202495967,0.45826453844258774,2.3162893020566058,0.0
+50.0,normal,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.654509444765669,-1.3761997220478075,0.06718083251646956,0.0
+50.0,normal,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.2100665067595017,-0.44387271038011844,0.023739696861115073,0.0
+50.0,normal,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.3972420161519412,0.46852791816308614,2.325956114140796,0.0
+50.0,normal,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.15089522562821903,-0.3653916528736353,0.0636012016171972,0.0
+50.0,high_volatility,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.3128715168427914,-0.7559930420336787,0.1302500083480959,0.0
+50.0,high_volatility,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.0994792793002464,-0.9045483387844222,3.103506897384915,0.0
+50.0,high_volatility,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.04784526285531641,-0.2163123647703497,0.1206218390597169,0.0
+50.0,high_volatility,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.2502025484177461,-0.6877884708229616,0.18738337398746946,0.0
+50.0,high_volatility,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,0.8335841756625672,-1.144087897396545,2.811256248721679,0.0
+50.0,high_volatility,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.06391725975334855,-0.4429400236602474,0.31510550415355026,0.0
+50.0,high_volatility,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.3557931628448455,-0.8051159679774993,0.0935296422878083,0.0
+50.0,high_volatility,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.0157368425098252,-1.0264774454765802,3.057951130496231,0.0
+50.0,high_volatility,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.06492702359509105,-0.2543630654514155,0.12450901826123344,0.0
+50.0,high_volatility,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.305907207197694,-0.7535274052372745,0.14171299084188654,0.0
+50.0,high_volatility,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.1082931338883661,-0.8959135093119264,3.112499777088659,0.0
+50.0,high_volatility,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.45852473536485,-2.035656880139098,1.1186074094093978,0.0
+50.0,high_volatility,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,-0.30374051347205033,-0.7568499166799515,0.14936888973585083,0.0
+50.0,high_volatility,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.0724796623330153,-0.9151753558321225,3.060134680498153,0.0
+50.0,high_volatility,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.039226934671188714,-0.5295371660255195,0.45108329668314207,0.0

@@ -1,0 +1,46 @@
+﻿fee_bps,scenario,B_opponent,research_question,strategy,baseline,paired_runs,mean_cost_difference_bps_strategy_minus_baseline,approx_95pct_ci_low_bps,approx_95pct_ci_high_bps,mean_completion_rate_difference
+10.0,high_market_impact,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.12743180371584414,-0.15226487830310145,0.40712848573478977,0.0
+10.0,high_market_impact,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.6031740035244149,0.3132756445185838,2.893072362530246,0.0
+10.0,high_market_impact,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.003929529778563808,-0.10197951457508886,0.10983857413221648,0.0
+10.0,high_market_impact,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.14171015792105038,-0.1399584211286871,0.4233787369707879,0.0
+10.0,high_market_impact,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.2482893799760675,-0.014754791850684956,2.51133355180282,0.0
+10.0,high_market_impact,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.03143754014796503,-0.06412941807519196,0.12700449837112202,0.0
+10.0,high_market_impact,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.07238068217945814,-0.24955310966131905,0.39431447402023534,0.0
+10.0,high_market_impact,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.4273252342235698,0.12579619896730865,2.728854269479831,0.0
+10.0,high_market_impact,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.009074623982295997,-0.10129179245148388,0.11944104041607588,0.0
+10.0,high_market_impact,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.13788229611714586,-0.14475902476431646,0.4205236169986082,0.0
+10.0,high_market_impact,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.5982324571862827,0.3120029721841664,2.8844619421883992,0.0
+10.0,high_market_impact,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.6570372387886477,-1.3128350092786465,-0.0012394682986489602,0.0
+10.0,high_market_impact,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.12952527590908705,-0.15389078739754644,0.4129413392157205,0.0
+10.0,high_market_impact,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,1.5513792969499318,0.26179156908973633,2.8409670248101273,0.0
+10.0,high_market_impact,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.07347925138255147,-0.20628855419601566,0.05933005143091273,0.0
+30.0,high_market_impact,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.35829373733470454,0.1242036375557099,0.5923838371136991,0.0
+30.0,high_market_impact,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,3.3300230420716246,2.456838592912323,4.203207491230926,0.0
+30.0,high_market_impact,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,0.025916642358444382,-0.09197827616947754,0.14381156088636632,0.0
+30.0,high_market_impact,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.38733470407895704,0.1736932491298533,0.6009761590280608,0.0
+30.0,high_market_impact,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.9599352254991804,2.0861198862024826,3.8337505647958783,0.0
+30.0,high_market_impact,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.0712748300800854,-0.21687728634522066,0.07432762618504987,0.0
+30.0,high_market_impact,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.320193444156684,0.07978841378581705,0.560598474527551,0.0
+30.0,high_market_impact,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,3.170458298780713,2.2700333098972942,4.070883287664132,0.0
+30.0,high_market_impact,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.061171669505973254,-0.1719783791163797,0.049635040104433197,0.0
+30.0,high_market_impact,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.36910985055472867,0.13847133079300547,0.5997483703164519,0.0
+30.0,high_market_impact,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,3.3289128726945347,2.4528997747796026,4.204925970609467,0.0
+30.0,high_market_impact,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-1.949746464519802,-2.5290153794652896,-1.3704775495743142,0.0
+30.0,high_market_impact,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.36116386960257335,0.12610163855936996,0.5962261006457767,0.0
+30.0,high_market_impact,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,3.346167906010217,2.477541386810036,4.214794425210398,0.0
+30.0,high_market_impact,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.3073029277337461,-0.4398389576961871,-0.17476689777130514,0.0
+50.0,high_market_impact,twap,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.23009645118111782,0.030993458457929363,0.4291994439043063,0.0
+50.0,high_market_impact,twap,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.5190956604963395,1.5627442264351834,3.4754470945574956,0.0
+50.0,high_market_impact,twap,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.021555432242876548,-0.09802506312361506,0.054914198637861955,0.0
+50.0,high_market_impact,frontloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.269675251627388,0.08919313732507991,0.450157365929696,0.0
+50.0,high_market_impact,frontloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.1160351989590125,1.1506034584897114,3.0814669394283136,0.0
+50.0,high_market_impact,frontloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.19237426005421673,-0.3530704644741678,-0.03167805563426565,0.0
+50.0,high_market_impact,backloaded,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.1757926263699228,-0.036715106022949695,0.3883003587627953,0.0
+50.0,high_market_impact,backloaded,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.312342014046503,1.3740288694763523,3.250655158616654,0.0
+50.0,high_market_impact,backloaded,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.025112249883666258,-0.0979651122433916,0.0477406124760591,0.0
+50.0,high_market_impact,bursty,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.22538743662084998,0.023925529643259502,0.42684934359844046,0.0
+50.0,high_market_impact,bursty,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.527859918884977,1.5657873543968752,3.4899324833730785,0.0
+50.0,high_market_impact,bursty,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-1.530016749900459,-2.2695839870961345,-0.7904495127047839,0.0
+50.0,high_market_impact,randomized,H1 dynamic feedback vs fixed TWAP,G1_dynamic_rule,G0_TWAP,30,0.2281659663370327,0.028257029834558606,0.4280749028395068,0.0
+50.0,high_market_impact,randomized,H2 Q-learning vs dynamic rule,G2_Q_learning,G1_dynamic_rule,30,2.4941827229469116,1.5506029988034338,3.4377624470903894,0.0
+50.0,high_market_impact,randomized,H3 opponent information vs none,G3_opponent_aware_Q,G2_Q_learning,30,-0.34120412573701203,-0.5708951355883043,-0.11151311588571977,0.0

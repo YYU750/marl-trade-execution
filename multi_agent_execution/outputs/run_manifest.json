@@ -1,6 +1,7 @@
 {
-  "created_utc": "2026-11-02T13:01:50.261135+00:00",
+  "created_utc": "2026-11-03T05:54:50.995447+00:00",
   "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "source_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
   "config": {
     "window_minutes": 30,
     "step_seconds": 30,
@@ -10,6 +11,8 @@
     "volatility_bps": 2.5,
     "temporary_impact_bps_per_slice": 0.35,
     "permanent_impact_bps_per_slice": 0.2,
+    "market_impact_multiplier": 1.0,
+    "opponent_impact_multiplier": 1.0,
     "inventory_risk_weight": 0.025,
     "terminal_unfilled_penalty_bps": 1000.0,
     "learning_rate": 0.15,
@@ -54,10 +57,32 @@
     "G3_opponent_aware_Q"
   ],
   "training_episodes_per_learner_per_fee": 1200,
+  "training_episode_count_primary": 7200,
+  "training_episode_count_opponent_impact_ablation": 7200,
+  "training_episode_count_uniform_control": 1200,
+  "training_episode_count_total": 15600,
   "evaluation_seeds_per_policy_opponent_fee_scenario": 30,
   "master_seed": 20261102,
-  "evaluation_episode_count": 3600,
-  "elapsed_seconds": 5.019,
+  "primary_evaluation_episode_count": 3600,
+  "market_impact_stress_episode_count": 1800,
+  "opponent_impact_off_evaluation_episode_count": 900,
+  "uniform_control_evaluation_episode_count": 60,
+  "total_evaluation_rows_across_experiments": 6360,
+  "market_impact_stress_multiplier": 2.0,
+  "market_impact_stress_training": "policies are frozen from base-impact training",
+  "opponent_impact_ablation_levels": [
+    1.0,
+    0.0
+  ],
+  "opponent_impact_ablation_training": "G2 and G3 are separately trained at each level using identical training seed schedules",
+  "paired_random_streams": {
+    "agent": "seed xor 0x13579BDF",
+    "opponent": "seed xor 0x2468ACE0",
+    "market": "seed xor 0x5DEECE66D"
+  },
+  "candidate_regret_scope": "relative to G0-G3 candidate policy set; not a global optimum or Nash equilibrium",
+  "total_cost_definition": "gross fill shortfall + explicit fee cost + terminal opportunity cost on unfilled shares",
+  "elapsed_seconds": 14.157,
   "sample_trace_review_required": true,
   "sample_trace_review_reason": "extreme_market_shock_above_10bp"
 }
