@@ -1,0 +1,59 @@
+{
+  "status": "complete",
+  "source_trace": "runs/round6/dual_iql_300x100_final/dual_q_training_episode1_trace.csv",
+  "selection": "earliest training step where both independent learners made a nonzero Q update",
+  "same_market_step": 23,
+  "same_market_snapshot_verified": true,
+  "agents": {
+    "A": {
+      "agent_id": "A",
+      "step": 23,
+      "state": [
+        7,
+        64009,
+        3,
+        5,
+        1,
+        10000
+      ],
+      "action_index": 0,
+      "action_multiplier": "0.0",
+      "requested_shares": 0.0,
+      "forced_fill_shares": 4009,
+      "filled_shares": 4009,
+      "reward": -86.42001461554356,
+      "q_before": 0.0,
+      "next_max_q": 0.0,
+      "target": -86.42001461554356,
+      "q_after": -25.92600438466307,
+      "alpha": 0.3,
+      "done": false
+    },
+    "B": {
+      "agent_id": "B",
+      "step": 23,
+      "state": [
+        7,
+        70000,
+        3,
+        5,
+        1,
+        10000
+      ],
+      "action_index": 0,
+      "action_multiplier": "0.0",
+      "requested_shares": 0.0,
+      "forced_fill_shares": 10000,
+      "filled_shares": 10000,
+      "reward": -215.5650152545362,
+      "q_before": 0.0,
+      "next_max_q": 0.0,
+      "target": -215.5650152545362,
+      "q_after": -64.66950457636086,
+      "alpha": 0.3,
+      "done": false
+    }
+  },
+  "update_rule": "Q_new = Q_old + alpha * (reward + gamma * next_max_q - Q_old); terminal updates use next_max_q=0",
+  "interpretation": "Each learner updates its own table from its own reward after both actions were jointly executed; forced fills are reported separately from requested shares."
+}

@@ -5,3 +5,4 @@ __pycache__/
 .pptx_build_*/
 .pptx_render_*/
 *.tmp
+/runs/

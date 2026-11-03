@@ -1,0 +1,98 @@
+{
+  "status": "complete",
+  "market_config": {
+    "horizon_steps": 30,
+    "initial_order_shares": 100000,
+    "initial_mid_price": 100.0,
+    "full_spread_bps": 6.0,
+    "liquidity_shares": 20000,
+    "volatility_bps": 2.0,
+    "temporary_impact_bps_per_liquidity_unit": 2.0,
+    "permanent_impact_bps_per_liquidity_unit": 0.6,
+    "max_trade_per_step": 10000,
+    "fee_bps": 0.3,
+    "terminal_penalty_per_share": 0.25,
+    "enforce_completion": true
+  },
+  "baseline_q_table": "results_round5_standard/q_table_selected.json",
+  "baseline_q_sha256": "f7cb62830123d330010d1465a3e6653751537dea6e537305447363b190ab461f",
+  "inherited_q_config": {
+    "alpha": 0.3,
+    "gamma": 1.0,
+    "epsilon_start": 0.25,
+    "epsilon_min": 0.02,
+    "epsilon_decay": 0.99,
+    "action_multipliers": [
+      0.0,
+      0.5,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "spread_bins_bps": [
+      0.0,
+      2.0,
+      4.0,
+      6.0,
+      8.0,
+      12.0,
+      20.0
+    ],
+    "mid_deviation_bins_bps": [
+      -100.0,
+      -50.0,
+      -20.0,
+      -10.0,
+      -5.0,
+      -2.0,
+      0.0,
+      2.0,
+      5.0,
+      10.0,
+      20.0,
+      50.0,
+      100.0
+    ],
+    "liquidity_ratio_bins": [
+      0.1,
+      0.25,
+      0.5,
+      1.0,
+      2.0,
+      5.0,
+      10.0
+    ]
+  },
+  "trained_q_tables": {
+    "A": {
+      "path": "iql_agent_A.json",
+      "sha256": "56ecc1576a6a93d73bf3958a7621255ffc12da675b27e14a06c586feeb971b30",
+      "states": 2951
+    },
+    "B": {
+      "path": "iql_agent_B.json",
+      "sha256": "79f0ac9bb6b67d598f8e83ffcccd5cd410625c657c0753dda06fe884bc59a035",
+      "states": 2871
+    }
+  },
+  "independent_agent_rng_seeds": {
+    "A": 20261101,
+    "B": 20261102
+  },
+  "train_seed_range": [
+    20263103,
+    20263402
+  ],
+  "train_episodes": 300,
+  "test_seed_range": [
+    20263403,
+    20263502
+  ],
+  "test_episodes": 100,
+  "no_validation_or_test_tuning": true,
+  "G0": "TWAP vs TWAP; same market seeds",
+  "G1": "frozen Round 5 A Q-table vs TWAP B",
+  "G2": "independent Q tables; simultaneous actions and independent reward updates",
+  "G3": "frozen self-play A Q-table tested against TWAP and front-loaded B",
+  "iql_note": "independent Q-learning faces a policy-dependent non-stationary environment; no equilibrium claim"
+}
