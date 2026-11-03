@@ -23,4 +23,6 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 旧版单学习者/固定规则对手实验留在 `multi_agent_execution/run_standard_benchmark.py` 作为历史对照代码；默认入口 `run_experiment.py` 运行双边同步学习主模型。
 
+若需比较动态规则与 Q-learning，可运行 `multi_agent_execution/run_matched_rule_q_comparison.py`；配对结果和改进候选记录在 `multi_agent_execution/outputs/matched_rule_q_comparison/`。
+
 本项目是简化市场仿真，不连接实时行情、账户或真实下单接口。模拟结果不构成真实市场效果或交易建议。

@@ -29,6 +29,7 @@ from run_standard_benchmark import (
     feasible_action_floor,
     make_observation,
 )
+from schedule_aware_q import ScheduleAwareQLearningAgent
 
 
 DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play"
@@ -75,6 +76,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 def qtable_to_json(agent: QLearningAgent) -> dict[str, Any]:
     return {
         "opponent_aware": agent.opponent_aware,
+        "state_encoding": getattr(agent, "state_encoding", "exact_time_inventory_price_opponent_v0"),
         "q": {"|".join(map(str, state)): values for state, values in agent.q.items()},
         "action_visits": {
             "|".join(map(str, state)): counts for state, counts in agent.action_visits.items()
@@ -84,6 +86,7 @@ def qtable_to_json(agent: QLearningAgent) -> dict[str, Any]:
 
 def snapshot_to_json(snap: dict[str, Any]) -> dict[str, Any]:
     return {
+        "state_encoding": ScheduleAwareQLearningAgent.state_encoding,
         "visited_state_count": snap["visited_state_count"],
         "q": {"|".join(map(str, state)): values for state, values in snap["q"].items()},
         "action_visits": {
@@ -102,7 +105,8 @@ def snapshot(agent: QLearningAgent) -> dict[str, Any]:
 
 def frozen_action(agent: QLearningAgent, obs: Any, rng: random.Random) -> int:
     """Read a learned policy without mutating its Q table during evaluation."""
-    state = discretize_state(obs, agent.opponent_aware)
+    state = (agent.state_key(obs) if hasattr(agent, "state_key")
+             else discretize_state(obs, agent.opponent_aware))
     values = agent.q.get(state, [0.0] * len(ACTIONS))
     visits = agent.action_visits.get(state, [0] * len(ACTIONS))
     _, min_idx = feasible_action_floor(obs, agent.config)
@@ -174,9 +178,9 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             fills[name] += qty[name]
             remaining[name] = max(0.0, remaining[name] - qty[name])
             shortfall_bps = (fill_prices[name] / initial_mid - 1) * 10_000.0
+            # Align the TD objective with reported implementation shortfall.
+            # Unfilled shares still receive the terminal completion penalty.
             reward = -(qty[name] / config.order_size) * shortfall_bps
-            reward -= (config.inventory_risk_weight * (remaining[name] / config.order_size) *
-                       (config.volatility_bps * volatility_multiplier / 2.5) * config.step_minutes)
             rewards[name] = reward
             action_counts[name][ACTION_NAMES[action_idx[name]]] += 1
 
@@ -240,8 +244,8 @@ def learning_reward_for(step_reward: float, remaining: float, config: Config, te
 
 def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[dict[int, dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], QLearningAgent, QLearningAgent]:
     run_seed = args.seed + run_id * 1_000_003
-    agent_a = QLearningAgent(config, opponent_aware=True)
-    agent_b = QLearningAgent(config, opponent_aware=True)
+    agent_a = ScheduleAwareQLearningAgent(config, opponent_aware=True)
+    agent_b = ScheduleAwareQLearningAgent(config, opponent_aware=True)
     snapshots: dict[int, dict[str, Any]] = {
         0: {"A": snapshot(agent_a), "B": snapshot(agent_b)}
     }
@@ -287,7 +291,7 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
 
 
 def instantiate_snapshot(config: Config, snap: dict[str, Any]) -> QLearningAgent:
-    agent = QLearningAgent(config, opponent_aware=True)
+    agent = ScheduleAwareQLearningAgent(config, opponent_aware=True)
     agent.q = {state: values[:] for state, values in snap["q"].items()}
     agent.action_visits = {state: counts[:] for state, counts in snap["visits"].items()}
     return agent
@@ -424,7 +428,7 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                   diagnostics: list[dict[str, Any]]) -> str:
     final_episode = args.episodes
     lines = [
-        "# 双 Q-learning 同步训练：本轮运行记录", "",
+        "# 双边同步 Q-learning：本轮运行记录", "",
         f"- 训练：{args.training_runs} 个独立种子，每个 {args.episodes} 回合；每回合 {Config().horizon} 个 30 秒时间步。",
         f"- 冻结交叉评估：每个训练运行 {len({r['A_checkpoint'] for r in summaries})} 个检查点，{args.eval_seeds} 个配对随机种子；单边手续费 {args.fee_bps:g} bp。",
         "- 训练在正常波动环境进行；训练检查点分别冻结后，在正常与 2 倍波动场景做交叉对局。",
@@ -461,10 +465,10 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               "该量只表示相对有限检查点候选集的成本差，不是全局最优策略，也不构成纳什均衡证明。", "",
               "## 解释边界", "",
               "- A、B 在每步基于同一交易前价格和各自库存同时选动作；两者的当前下单量共同影响暂时冲击与下一步价格。",
-              "- 双方均为表格 Q-learning，状态包含时间、自己的剩余订单、价格偏离和对手上一期成交量。训练中两边的策略都在变化，因此环境对任一单方而言是非平稳的。",
+              "- 双方均为带执行进度状态聚合的表格 Q-learning：状态包含 6 档时间阶段、订单执行进度、价格偏离和对手上一期成交量。TD 奖励与实施缺口口径对齐；下一状态仅从已尝试且可行的动作中自举，避免未尝试动作的零初始化高估。训练中两边策略都在变化，因此环境对任一单方而言是非平稳的。",
               "- 检查点交叉对局把已保存的策略冻结后进行组合评估，避免评估过程继续改写 Q 表；配对种子共享外生价格冲击。",
               "- 稳定性要结合多训练种子的滚动奖励、成本波动、状态覆盖与检查点交叉结果判断。单一训练曲线变平不足以证明收敛。",
-              "- 本扩展单独写入 outputs/advanced_self_play，不更改标准版固定规则 B 基准及其既有结果。",
+              "- 本主模型运行结果写入 outputs/advanced_self_play；规则策略配对比较另由 run_matched_rule_q_comparison.py 生成。",
               "- 该环境是教学用简化撮合模型，没有真实行情、订单簿或实盘接口。"]
     return "\n".join(lines) + "\n"
 
@@ -474,7 +478,7 @@ def main() -> None:
     started = time.time()
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    config = Config()
+    config = Config(inventory_risk_weight=0.0)
     all_training: list[dict[str, Any]] = []
     all_diagnostics: list[dict[str, Any]] = []
     all_raw: list[dict[str, Any]] = []
@@ -516,6 +520,9 @@ def main() -> None:
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "script": Path(__file__).name, "script_sha256": script_hash,
         "shared_qlearning_core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+        "schedule_aware_q_sha256": hashlib.sha256(
+            Path(__file__).with_name("schedule_aware_q.py").read_bytes()
+        ).hexdigest(),
         "parameters": {"episodes": args.episodes, "training_runs": args.training_runs,
                        "eval_seeds": args.eval_seeds, "checkpoint_interval": args.checkpoint_interval,
                        "fee_bps": args.fee_bps, "seed": args.seed,
@@ -524,8 +531,11 @@ def main() -> None:
                    "training_scenarios": ["normal"],
                    "evaluation_scenarios": {name: mult for name, mult in SCENARIOS}},
         "method": {
-            "agent_A": "opponent-aware tabular Q-learning",
-            "agent_B": "opponent-aware tabular Q-learning",
+            "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+            "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+            "state_encoding": ScheduleAwareQLearningAgent.state_encoding,
+            "reward_alignment": "implementation shortfall plus terminal unfilled-order penalty; no extra inventory-risk shaping",
+            "untried_action_bootstrap": "only tried feasible actions are included in the next-state maximum",
             "simultaneous_action_and_update": True,
             "checkpoint_evaluation": "frozen cross-play on paired seeds",
             "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",

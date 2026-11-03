@@ -1,0 +1,38 @@
+{
+  "fee_bps": 30.0,
+  "train_episodes": 1200,
+  "training_runs": 5,
+  "evaluation_seeds_per_opponent_scenario": 50,
+  "master_seed": 20261104,
+  "scenarios": {
+    "normal": 1.0,
+    "high_volatility": 2.0
+  },
+  "B_opponents": [
+    "twap",
+    "frontloaded",
+    "backloaded",
+    "bursty",
+    "randomized"
+  ],
+  "paired_seed_schedule": "same exogenous market seed for every A policy in each B opponent/scenario/evaluation cell",
+  "evaluation_environment": "run_standard_benchmark.run_episode with Config defaults",
+  "training_inventory_risk_weight": 0.0,
+  "code_sha256": {
+    "comparison_script": "88df10e38ef947c72ea23a715f8efc7dd4202496041777545792f837099497b2",
+    "market_simulator": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
+    "schedule_aware_q_agent": "92e55564d4fd3aea3038a7caa4efc8f49832b104e96712813694c90ace720fad",
+    "advanced_self_play": "f12dd96aaef9cf6d4139e97009b5cf6c6986371beb56d3116e2c7fb5c434a515"
+  },
+  "improved_q_changes": [
+    "schedule-aware compact state abstraction",
+    "training on all fixed test-opponent types",
+    "remove inventory-risk shaping from TD reward to align with implementation-shortfall scorecard",
+    "bootstrap only from tried feasible actions to avoid zero-initialized optimistic bias"
+  ],
+  "counts": {
+    "raw_evaluations": 7000,
+    "summary_rows": 140,
+    "paired_difference_rows": 240
+  }
+}

@@ -1,8 +1,9 @@
 {
-  "created_utc": "2026-11-03T10:42:50.279759+00:00",
+  "created_utc": "2026-11-03T11:46:15.887547+00:00",
   "script": "run_advanced_self_play.py",
-  "script_sha256": "755459f0e118c5be6c1586563e6246c726e6ffe49da6de740fd64e0d6defdff6",
+  "script_sha256": "f12dd96aaef9cf6d4139e97009b5cf6c6986371beb56d3116e2c7fb5c434a515",
   "shared_qlearning_core_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
+  "schedule_aware_q_sha256": "92e55564d4fd3aea3038a7caa4efc8f49832b104e96712813694c90ace720fad",
   "parameters": {
     "episodes": 500,
     "training_runs": 5,
@@ -23,7 +24,7 @@
     "permanent_impact_bps_per_slice": 0.2,
     "market_impact_multiplier": 1.0,
     "opponent_impact_multiplier": 1.0,
-    "inventory_risk_weight": 0.025,
+    "inventory_risk_weight": 0.0,
     "terminal_unfilled_penalty_bps": 1000.0,
     "learning_rate": 0.15,
     "discount": 0.98,
@@ -39,8 +40,11 @@
     }
   },
   "method": {
-    "agent_A": "opponent-aware tabular Q-learning",
-    "agent_B": "opponent-aware tabular Q-learning",
+    "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+    "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+    "state_encoding": "schedule_aware_v1",
+    "reward_alignment": "implementation shortfall plus terminal unfilled-order penalty; no extra inventory-risk shaping",
+    "untried_action_bootstrap": "only tried feasible actions are included in the next-state maximum",
     "simultaneous_action_and_update": true,
     "checkpoint_evaluation": "frozen cross-play on paired seeds",
     "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",
@@ -52,5 +56,5 @@
     "cross_play_summary_rows": 360,
     "checkpoint_count_per_run": 6
   },
-  "elapsed_seconds": 24.667
+  "elapsed_seconds": 12.855
 }
