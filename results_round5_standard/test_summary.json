@@ -1,0 +1,46 @@
+{
+  "status": "complete",
+  "summaries": {
+    "q_learning_round4": {
+      "n": 100,
+      "mean": 8.849118737196282,
+      "sample_sd": 9.70153126302201,
+      "ci95_low": 6.924334934612714,
+      "ci95_high": 10.773902539779849,
+      "mean_fill_ratio": 1.0,
+      "mean_unfilled_shares": 0.0
+    },
+    "twap": {
+      "n": 100,
+      "mean": 7.5044235677964695,
+      "sample_sd": 6.2998217804476155,
+      "ci95_low": 6.254538926555663,
+      "ci95_high": 8.754308209037276,
+      "mean_fill_ratio": 1.0,
+      "mean_unfilled_shares": 0.0
+    },
+    "spread_urgency": {
+      "n": 100,
+      "mean": 7.725158684293783,
+      "sample_sd": 6.956548063220488,
+      "ci95_low": 6.344979548550838,
+      "ci95_high": 9.105337820036727,
+      "mean_fill_ratio": 1.0,
+      "mean_unfilled_shares": 0.0
+    },
+    "paired_q_minus_twap_bps": {
+      "n": 100,
+      "mean": 1.344695169399812,
+      "sample_sd": 4.088987989068617,
+      "ci95_low": 0.5334399523685984,
+      "ci95_high": 2.1559503864310257
+    },
+    "paired_q_minus_spread_urgency_bps": {
+      "n": 100,
+      "mean": 1.1239600529024991,
+      "sample_sd": 3.5504797184356307,
+      "ci95_low": 0.41954487676486996,
+      "ci95_high": 1.8283752290401283
+    }
+  }
+}

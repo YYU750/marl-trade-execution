@@ -1,0 +1,49 @@
+{
+  "implementation": "round5 diagnostic copy; Q-learning policy and hyperparameters unchanged from round4",
+  "visit_tracking": "per-state-action update counts; test trace reports prior counts without updating",
+  "market_config": {
+    "horizon_steps": 30,
+    "initial_order_shares": 100000,
+    "initial_mid_price": 100.0,
+    "full_spread_bps": 6.0,
+    "liquidity_shares": 20000,
+    "volatility_bps": 2.0,
+    "temporary_impact_bps_per_liquidity_unit": 2.0,
+    "permanent_impact_bps_per_liquidity_unit": 0.6,
+    "max_trade_per_step": 10000,
+    "fee_bps": 0.3,
+    "terminal_penalty_per_share": 0.25,
+    "enforce_completion": true
+  },
+  "train_seed_range": [
+    20261103,
+    20261402
+  ],
+  "validation_seed_range": [
+    20261403,
+    20261462
+  ],
+  "test_seed_range": [
+    20261463,
+    20261562
+  ],
+  "train_count": 300,
+  "validation_count": 60,
+  "test_count": 100,
+  "fixed_opponent": "B=TWAP",
+  "selection_rule": "minimum validation mean total_objective_bps; test seeds untouched until selection",
+  "gamma": 1.0,
+  "action_space": [
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0
+  ],
+  "state": "(exact steps_remaining, exact own remaining shares, binned observable spread, binned mid deviation bps, binned liquidity ratio, max_trade_per_step)",
+  "reward": "negative realized_fill_shortfall - unfilled_opportunity_cost - fees - terminal_penalty",
+  "completion_constraint": "minimum required fill max(0, remaining-(steps_left-1)*cap), enforce_completion=True",
+  "test_policy": "loaded Q table, epsilon=0, no updates, unseen states return zero values without insertion",
+  "actual_training_update": "selected_training_update.json is from the selected candidate training stream",
+  "abides_reference": "algorithm idea only; no ABIDES source or dependency copied"
+}

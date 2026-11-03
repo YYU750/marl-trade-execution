@@ -1,0 +1,46 @@
+{
+  "status": "complete",
+  "standard_rerun_identity": {
+    "q_costs_equal_to_round4": true,
+    "action_sequences_equal_to_round4": true,
+    "q_test_episodes": 100
+  },
+  "standard_q_behavior": {
+    "test_decision_steps": 3000,
+    "zero_multiplier_requests": 2833,
+    "steps_with_forced_completion": 937,
+    "forced_shares": 9015269,
+    "filled_shares": 10000000,
+    "forced_share_fraction": 0.9015269,
+    "unseen_q_states": 472,
+    "all_zero_q_vectors": 782,
+    "fill_reconciliation_failures": 0
+  },
+  "posthoc_zero_request_test_set": {
+    "n": 100,
+    "zero_request_mean_bps": 8.959050957668461,
+    "q_mean_bps": 8.849118737196282,
+    "note": "diagnostic only; post hoc and not a pre-registered confirmatory comparison"
+  },
+  "pressure": {
+    "seeds": [
+      20261600,
+      20261699
+    ],
+    "seed_count": 100,
+    "split_overlap": {
+      "train": false,
+      "validation": false,
+      "test": false
+    },
+    "scenarios": [
+      "baseline",
+      "high_volatility_8bps",
+      "low_liquidity_10000",
+      "opponent_front_loaded",
+      "wide_spread_12bps"
+    ],
+    "paired_summary_rows": 10
+  },
+  "cost_definition": "total_objective = realized_fill_shortfall + unfilled_opportunity_cost + fees + terminal_penalty; reported bps divide by initial order notional"
+}

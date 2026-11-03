@@ -1,0 +1,25 @@
+{
+  "selected_candidate_id": 2,
+  "update": {
+    "state": [
+      1,
+      10000,
+      3,
+      10,
+      1,
+      10000
+    ],
+    "action_index": 0,
+    "action_multiplier": 0.0,
+    "reward": -2359.941124785985,
+    "next_state": null,
+    "next_max_q": 0.0,
+    "old_q": 0.0,
+    "target": -2359.941124785985,
+    "new_q": -707.9823374357954,
+    "done": true,
+    "seed": 20261103,
+    "step": 29,
+    "episode": 1
+  }
+}

@@ -1,0 +1,5 @@
+﻿candidate_id,alpha,epsilon_decay,validation_seed_count,validation_mean_objective_bps,q_states
+0,0.15,0.99,60,6.952310974029433,2882
+1,0.15,0.995,60,6.929157537680387,3839
+2,0.3,0.99,60,6.8881084565571875,2839
+3,0.3,0.995,60,6.925406445593786,3955

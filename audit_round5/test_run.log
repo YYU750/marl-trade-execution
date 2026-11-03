@@ -1,0 +1,41 @@
+test_selected_request_plus_forced_fill_reproduces_actual_fill (test_behavior_diagnostics.BehaviorDiagnosticTests.test_selected_request_plus_forced_fill_reproduces_actual_fill) ... ok
+test_unseen_frozen_state_tie_selects_first_valid_action_without_insertion (test_behavior_diagnostics.BehaviorDiagnosticTests.test_unseen_frozen_state_tie_selects_first_valid_action_without_insertion) ... ok
+test_visit_counts_increment_and_survive_model_reload (test_behavior_diagnostics.BehaviorDiagnosticTests.test_visit_counts_increment_and_survive_model_reload) ... ok
+test_zero_pace_request_is_distinguished_from_forced_fill (test_behavior_diagnostics.BehaviorDiagnosticTests.test_zero_pace_request_is_distinguished_from_forced_fill) ... ok
+test_action_validation_and_action_aliases (test_independent_audit.Round5IndependentTests.test_action_validation_and_action_aliases) ... ok
+test_bellman_and_terminal_targets (test_independent_audit.Round5IndependentTests.test_bellman_and_terminal_targets) ... ok
+test_completion_constraint_is_explicit_and_feasible (test_independent_audit.Round5IndependentTests.test_completion_constraint_is_explicit_and_feasible) ... ok
+test_cost_identity_and_unfinished_pressure_case (test_independent_audit.Round5IndependentTests.test_cost_identity_and_unfinished_pressure_case) ... ok
+test_epsilon_and_rng_reproducibility (test_independent_audit.Round5IndependentTests.test_epsilon_and_rng_reproducibility) ... ok
+test_known_two_step_mdp_values (test_independent_audit.Round5IndependentTests.test_known_two_step_mdp_values)
+A tiny deterministic MDP has V(s0)=max(1, 5)=5 by enumeration. ... ok
+test_mid_price_state_and_frozen_unseen_state (test_independent_audit.Round5IndependentTests.test_mid_price_state_and_frozen_unseen_state) ... ok
+test_next_state_max_uses_only_valid_actions (test_independent_audit.Round5IndependentTests.test_next_state_max_uses_only_valid_actions) ... ok
+test_nonfinite_configuration_rejected (test_independent_audit.Round5IndependentTests.test_nonfinite_configuration_rejected) ... ok
+test_nonfinite_saved_q_rejected (test_independent_audit.Round5IndependentTests.test_nonfinite_saved_q_rejected) ... ok
+test_reward_sum_equals_total_objective_over_an_episode (test_independent_audit.Round5IndependentTests.test_reward_sum_equals_total_objective_over_an_episode) ... ok
+test_snapshot_synchronization_and_model_roundtrip (test_independent_audit.Round5IndependentTests.test_snapshot_synchronization_and_model_roundtrip) ... ok
+test_action_is_legal_and_uses_only_own_observation (test_qlearning.QLearningTests.test_action_is_legal_and_uses_only_own_observation) ... ok
+test_bellman_update_hand_calculation (test_qlearning.QLearningTests.test_bellman_update_hand_calculation) ... ok
+test_deterministic_training_keeps_action_feasible (test_qlearning.QLearningTests.test_deterministic_training_keeps_action_feasible) ... ok
+test_gamma_one_is_default_for_finite_horizon (test_qlearning.QLearningTests.test_gamma_one_is_default_for_finite_horizon) ... ok
+test_save_load_reproduces_frozen_action (test_qlearning.QLearningTests.test_save_load_reproduces_frozen_action) ... ok
+test_state_encoder_changes_when_observable_state_changes (test_qlearning.QLearningTests.test_state_encoder_changes_when_observable_state_changes) ... ok
+test_both_agents_decide_from_same_market_snapshot (test_simulation.SimulationTests.test_both_agents_decide_from_same_market_snapshot) ... ok
+test_discrete_action_contract_is_separate_from_continuous_rule_quantity (test_simulation.SimulationTests.test_discrete_action_contract_is_separate_from_continuous_rule_quantity) ... ok
+test_hand_calculable_zero_cost_case (test_simulation.SimulationTests.test_hand_calculable_zero_cost_case) ... ok
+test_learning_hook_is_only_a_reserved_interface (test_simulation.SimulationTests.test_learning_hook_is_only_a_reserved_interface) ... ok
+test_order_conservation_and_step_cap (test_simulation.SimulationTests.test_order_conservation_and_step_cap) ... ok
+test_reset_observe_step_api_and_private_observation (test_simulation.SimulationTests.test_reset_observe_step_api_and_private_observation) ... ok
+test_same_seed_repeats_exogenous_shocks (test_simulation.SimulationTests.test_same_seed_repeats_exogenous_shocks) ... ok
+test_spread_urgency_changes_with_spread_and_deadline (test_simulation.SimulationTests.test_spread_urgency_changes_with_spread_and_deadline) ... ok
+test_stale_snapshot_is_rejected (test_simulation.SimulationTests.test_stale_snapshot_is_rejected) ... ok
+test_terminal_unfilled_counterexample_has_separate_is_and_penalty (test_simulation.SimulationTests.test_terminal_unfilled_counterexample_has_separate_is_and_penalty) ... ok
+test_twap_stays_within_order (test_simulation.SimulationTests.test_twap_stays_within_order) ... ok
+test_unfinished_order_and_penalty_are_reported (test_simulation.SimulationTests.test_unfinished_order_and_penalty_are_reported) ... ok
+test_zero_impact_prevents_cross_agent_price_effect (test_simulation.SimulationTests.test_zero_impact_prevents_cross_agent_price_effect) ... ok
+
+----------------------------------------------------------------------
+Ran 35 tests in 0.229s
+
+OK

@@ -1,0 +1,110 @@
+{
+  "model": "C:\\Users\\\u8c22\u4e1c\u6770\\Desktop\\\u5988\u8036\uff01VScode\\Python\\quant\\finance_ai_execution_sim\\results_round5_standard\\q_table_selected.json",
+  "model_frozen": true,
+  "epsilon": 0.0,
+  "updates_during_pressure_evaluation": false,
+  "seed_range": [
+    20261600,
+    20261699
+  ],
+  "seed_count": 100,
+  "scenarios": [
+    {
+      "name": "baseline",
+      "market_config": {
+        "horizon_steps": 30,
+        "initial_order_shares": 100000,
+        "initial_mid_price": 100.0,
+        "full_spread_bps": 6.0,
+        "liquidity_shares": 20000,
+        "volatility_bps": 2.0,
+        "temporary_impact_bps_per_liquidity_unit": 2.0,
+        "permanent_impact_bps_per_liquidity_unit": 0.6,
+        "max_trade_per_step": 10000,
+        "fee_bps": 0.3,
+        "terminal_penalty_per_share": 0.25,
+        "enforce_completion": true
+      },
+      "opponent": "twap"
+    },
+    {
+      "name": "high_volatility_8bps",
+      "market_config": {
+        "horizon_steps": 30,
+        "initial_order_shares": 100000,
+        "initial_mid_price": 100.0,
+        "full_spread_bps": 6.0,
+        "liquidity_shares": 20000,
+        "volatility_bps": 8.0,
+        "temporary_impact_bps_per_liquidity_unit": 2.0,
+        "permanent_impact_bps_per_liquidity_unit": 0.6,
+        "max_trade_per_step": 10000,
+        "fee_bps": 0.3,
+        "terminal_penalty_per_share": 0.25,
+        "enforce_completion": true
+      },
+      "opponent": "twap"
+    },
+    {
+      "name": "low_liquidity_10000",
+      "market_config": {
+        "horizon_steps": 30,
+        "initial_order_shares": 100000,
+        "initial_mid_price": 100.0,
+        "full_spread_bps": 6.0,
+        "liquidity_shares": 10000,
+        "volatility_bps": 2.0,
+        "temporary_impact_bps_per_liquidity_unit": 2.0,
+        "permanent_impact_bps_per_liquidity_unit": 0.6,
+        "max_trade_per_step": 10000,
+        "fee_bps": 0.3,
+        "terminal_penalty_per_share": 0.25,
+        "enforce_completion": true
+      },
+      "opponent": "twap"
+    },
+    {
+      "name": "wide_spread_12bps",
+      "market_config": {
+        "horizon_steps": 30,
+        "initial_order_shares": 100000,
+        "initial_mid_price": 100.0,
+        "full_spread_bps": 12.0,
+        "liquidity_shares": 20000,
+        "volatility_bps": 2.0,
+        "temporary_impact_bps_per_liquidity_unit": 2.0,
+        "permanent_impact_bps_per_liquidity_unit": 0.6,
+        "max_trade_per_step": 10000,
+        "fee_bps": 0.3,
+        "terminal_penalty_per_share": 0.25,
+        "enforce_completion": true
+      },
+      "opponent": "twap"
+    },
+    {
+      "name": "opponent_front_loaded",
+      "market_config": {
+        "horizon_steps": 30,
+        "initial_order_shares": 100000,
+        "initial_mid_price": 100.0,
+        "full_spread_bps": 6.0,
+        "liquidity_shares": 20000,
+        "volatility_bps": 2.0,
+        "temporary_impact_bps_per_liquidity_unit": 2.0,
+        "permanent_impact_bps_per_liquidity_unit": 0.6,
+        "max_trade_per_step": 10000,
+        "fee_bps": 0.3,
+        "terminal_penalty_per_share": 0.25,
+        "enforce_completion": true
+      },
+      "opponent": "front_loaded"
+    }
+  ],
+  "strategies": [
+    "round5 frozen Q",
+    "TWAP",
+    "spread_urgency"
+  ],
+  "pairing": "same seed gives the same exogenous RNG stream across policies within each scenario",
+  "posthoc_diagnostic": "zero-request policy is exploratory and must not be treated as a confirmatory benchmark"
+}

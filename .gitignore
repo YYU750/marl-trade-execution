@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.docx_render_*/
+.pptx_build_*/
+.pptx_render_*/
+*.tmp
