@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>双智能体交易执行回放</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="主导航">
+      <a class="brand" href="#top" aria-label="交易执行实验室首页">
+        <span class="brand-mark">ME</span>
+        <span class="brand-name">执行研究<span>SIMULATION LAB</span></span>
+      </a>
+      <nav class="nav-list">
+        <a class="nav-item active" href="#overview"><span class="nav-glyph">◉</span><span>回放总览</span></a>
+        <a class="nav-item" href="#agents"><span class="nav-glyph">⌘</span><span>智能体决策</span></a>
+        <a class="nav-item" href="#market"><span class="nav-glyph">⌁</span><span>市场反馈</span></a>
+        <a class="nav-item" href="#costs"><span class="nav-glyph">▤</span><span>成本拆解</span></a>
+      </nav>
+      <div class="rail-bottom">
+        <span class="live-dot"></span>
+        <span>冻结策略回放</span>
+      </div>
+    </aside>
+
+    <main id="top" class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">双机构 · 同步决策 · 单回合观察</div>
+          <h1>交易执行回放</h1>
+        </div>
+        <div class="run-meta">
+          <span class="status-pill"><span class="status-dot"></span>策略已冻结</span>
+          <span class="meta-chip">检查点 <b id="checkpoint">500</b></span>
+          <span class="meta-chip">随机种子 <b id="seed">20261105</b></span>
+          <span class="meta-chip">正常波动</span>
+        </div>
+      </header>
+
+      <section id="overview" class="metric-strip" aria-label="当前回放概况">
+        <div class="metric">
+          <span class="metric-label">当前中间价</span>
+          <strong id="metric-mid">—</strong>
+          <span class="metric-foot" id="metric-mid-change">相对初始价 —</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">当前步数</span>
+          <strong id="metric-step">—</strong>
+          <span class="metric-foot">30 秒 / 步 · 共 60 步</span>
+        </div>
+        <div class="metric metric-a">
+          <span class="metric-label">A 剩余订单</span>
+          <strong id="metric-rem-a">—</strong>
+          <span class="metric-foot" id="metric-fill-a">已完成 —</span>
+        </div>
+        <div class="metric metric-b">
+          <span class="metric-label">B 剩余订单</span>
+          <strong id="metric-rem-b">—</strong>
+          <span class="metric-foot" id="metric-fill-b">已完成 —</span>
+        </div>
+      </section>
+
+      <section id="market" class="market-section">
+        <div class="section-heading">
+          <div>
+            <span class="section-index">01 / MARKET</span>
+            <h2>中间价路径</h2>
+          </div>
+          <div class="chart-legend"><span class="legend-line"></span>已回放 <span class="legend-future"></span>后续路径 <span class="legend-focus"></span>当前步</div>
+        </div>
+        <div class="playback-bar">
+          <div class="playback-buttons">
+            <button id="first-step" class="icon-button" type="button" title="回到第一步" aria-label="回到第一步">|◀</button>
+            <button id="toggle-play" class="icon-button play-button" type="button" title="播放" aria-label="播放">▶</button>
+            <button id="next-step" class="icon-button" type="button" title="下一步" aria-label="下一步">▶|</button>
+          </div>
+          <div class="scrubber-wrap">
+            <div class="scrubber-title"><span>回放进度</span><b id="progress-label">1 / 60</b></div>
+            <input id="step-slider" type="range" min="1" max="60" value="1" aria-label="回放步数">
+            <div class="scrubber-ticks"><span>1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>
+          </div>
+          <label class="speed-control">播放速度
+            <select id="play-speed" aria-label="播放速度"><option value="900">1×</option><option value="500">2×</option><option value="250">4×</option></select>
+          </label>
+        </div>
+        <div class="market-layout">
+          <div class="chart-panel">
+            <canvas id="price-chart" aria-label="60步中间价路径，可点击定位决策步"></canvas>
+            <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+            <div class="chart-axis-note"><span>第 1 步</span><span>交易进程</span><span>第 60 步</span></div>
+          </div>
+          <aside class="market-readout" aria-label="当前步市场反馈">
+            <div class="readout-title"><span class="readout-icon">↗</span><h3>本步市场反馈</h3></div>
+            <div class="readout-row"><span>联合下单</span><b id="joint-qty">—</b></div>
+            <div class="readout-row"><span>外生价格扰动</span><b id="external-shock">—</b></div>
+            <div class="readout-row"><span>临时冲击</span><b id="temp-impact">—</b></div>
+            <div class="readout-row"><span>永久冲击</span><b id="perm-impact">—</b></div>
+            <div class="readout-row next-mid"><span>下一步中间价</span><b id="next-mid">—</b></div>
+            <p class="readout-note">永久冲击进入后续价格路径，不重复计入本步成交成本。</p>
+          </aside>
+        </div>
+      </section>
+
+      <section id="agents" class="agents-section">
+        <div class="section-heading compact-heading">
+          <div>
+            <span class="section-index">02 / DECISIONS</span>
+            <h2>同一快照下的 A / B 决策</h2>
+          </div>
+          <p class="section-side-note">两边先独立选动作，再由环境统一撮合</p>
+        </div>
+        <div class="agent-grid">
+          <article class="agent-panel agent-a-panel">
+            <div class="agent-heading">
+              <div class="agent-identity"><span class="agent-letter">A</span><div><h3>机构 A</h3><span class="agent-subtitle">独立 Q 表 · 冻结贪婪策略</span></div></div>
+              <span class="action-tag" id="a-action-tag">—</span>
+            </div>
+            <div class="agent-facts">
+              <div><span>本步行动</span><b id="a-action">—</b></div>
+              <div><span>提交数量</span><b id="a-qty">—</b></div>
+              <div><span>剩余股数</span><b id="a-remaining">—</b></div>
+              <div><span>执行进度 / TWAP</span><b id="a-pace">—</b></div>
+            </div>
+            <div class="state-line"><span>离散状态</span><code id="a-state">—</code><span id="a-mode">—</span></div>
+            <div class="q-head"><span>当前状态动作价值</span><span>Q 值 · 访问次数</span></div>
+            <div id="a-actions" class="action-list"></div>
+            <div class="agent-foot"><span>上期对手成交</span><b id="a-opponent-flow">—</b><span>可行下界</span><b id="a-floor">—</b></div>
+          </article>
+
+          <article class="agent-panel agent-b-panel">
+            <div class="agent-heading">
+              <div class="agent-identity"><span class="agent-letter">B</span><div><h3>机构 B</h3><span class="agent-subtitle">独立 Q 表 · 冻结贪婪策略</span></div></div>
+              <span class="action-tag" id="b-action-tag">—</span>
+            </div>
+            <div class="agent-facts">
+              <div><span>本步行动</span><b id="b-action">—</b></div>
+              <div><span>提交数量</span><b id="b-qty">—</b></div>
+              <div><span>剩余股数</span><b id="b-remaining">—</b></div>
+              <div><span>执行进度 / TWAP</span><b id="b-pace">—</b></div>
+            </div>
+            <div class="state-line"><span>离散状态</span><code id="b-state">—</code><span id="b-mode">—</span></div>
+            <div class="q-head"><span>当前状态动作价值</span><span>Q 值 · 访问次数</span></div>
+            <div id="b-actions" class="action-list"></div>
+            <div class="agent-foot"><span>上期对手成交</span><b id="b-opponent-flow">—</b><span>可行下界</span><b id="b-floor">—</b></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="execution-section">
+        <div class="section-heading compact-heading">
+          <div>
+            <span class="section-index">03 / JOINT EXECUTION</span>
+            <h2>联合执行与成本</h2>
+          </div>
+          <span class="section-side-note" id="cost-through-step">累计至第 1 步</span>
+        </div>
+        <div class="execution-grid">
+          <div class="flow-panel">
+            <div class="flow-head"><span>双方共同下单</span><span>市场统一撮合</span><span>反馈至下一步</span></div>
+            <div class="flow-chain">
+              <div class="flow-node node-a"><span>机构 A</span><b id="flow-a-qty">—</b><small id="flow-a-action">—</small></div>
+              <span class="flow-plus">+</span>
+              <div class="flow-node node-b"><span>机构 B</span><b id="flow-b-qty">—</b><small id="flow-b-action">—</small></div>
+              <span class="flow-arrow">→</span>
+              <div class="flow-node node-market"><span>联合成交量</span><b id="flow-joint">—</b><small>影响临时冲击与后续价格</small></div>
+            </div>
+            <div class="execution-note"><span class="note-dot"></span><span id="execution-explanation">—</span></div>
+          </div>
+          <div id="costs" class="cost-panel">
+            <div class="cost-title"><h3>累计实施缺口拆分</h3><span>bp / 母单名义金额</span></div>
+            <div class="cost-table-head"><span>成本项</span><span class="col-a">A</span><span class="col-b">B</span></div>
+            <div class="cost-row"><span><i class="cost-swatch drift"></i>价格漂移</span><b id="cost-a-drift">—</b><b id="cost-b-drift">—</b></div>
+            <div class="cost-row"><span><i class="cost-swatch spread"></i>半价差</span><b id="cost-a-spread">—</b><b id="cost-b-spread">—</b></div>
+            <div class="cost-row"><span><i class="cost-swatch impact"></i>临时冲击</span><b id="cost-a-impact">—</b><b id="cost-b-impact">—</b></div>
+            <div class="cost-row"><span><i class="cost-swatch fee"></i>手续费</span><b id="cost-a-fee">—</b><b id="cost-b-fee">—</b></div>
+            <div class="cost-row total-row"><span>累计合计</span><b id="cost-a-total">—</b><b id="cost-b-total">—</b></div>
+            <div class="cost-footnote">未完成订单机会成本单独核算；永久冲击通过后续价格漂移体现。</div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        <span>单回合冻结策略演示 · 不代表统计优势或均衡结论</span>
+        <span id="data-status">正在读取真实回放数据…</span>
+      </footer>
+      <div id="load-error" class="load-error" hidden></div>
+    </main>
+  </div>
+</body>
+</html>

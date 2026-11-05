@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "purpose": "frozen A/B demo replay configuration and provenance",
+  "source_ref": "wuxinhan-1@79dab6f",
+  "replay_source_commit": "79dab6f7b148361abbe494df5a25b411cd4d7aca",
+  "checkpoint_episode": 500,
+  "checkpoint_file": "multi_agent_execution\\outputs\\advanced_self_play\\checkpoint_qtables_run1.json",
+  "checkpoint_sha256": "01ab763ceff9d5469556dd9829e42faf5bf38be3919cd69231ce69c434cde015",
+  "checkpoint_run_manifest_file": "multi_agent_execution\\outputs\\advanced_self_play\\run_manifest.json",
+  "checkpoint_run_manifest_sha256": "321ee82d1a41c7c317f1216e571fbeca7910e36b73bbef769dc49a67782c2b34",
+  "checkpoint_training_source_hashes": {
+    "script_sha256": "f12dd96aaef9cf6d4139e97009b5cf6c6986371beb56d3116e2c7fb5c434a515",
+    "shared_qlearning_core_sha256": "cbc88f72a7a8bff0c881ce4d604e411390d5809931d3745827d2f37db87eea88",
+    "schedule_aware_q_sha256": "92e55564d4fd3aea3038a7caa4efc8f49832b104e96712813694c90ace720fad"
+  },
+  "seed": 20261105,
+  "scenario": "normal",
+  "fee_bps": 30.0,
+  "epsilon": 0.0,
+  "training_updates_applied": false,
+  "output_file": "multi_agent_execution\\outputs\\advanced_self_play\\demo_frozen\\demo_frozen_episode.json",
+  "runner_files": {
+    "export_agent_demo.py": {
+      "path": "multi_agent_execution\\export_agent_demo.py",
+      "sha256": "1d52f4aa3b3f77bd23ccfdf700da4640f78dc3579ae204163476672c8f5ccfe3"
+    },
+    "run_advanced_self_play.py": {
+      "path": "multi_agent_execution\\run_advanced_self_play.py",
+      "sha256": "b55f01493aaa930da42ec66a478596baf6d640c776a50916808e1b192bd8dae7"
+    },
+    "run_standard_benchmark.py": {
+      "path": "multi_agent_execution\\run_standard_benchmark.py",
+      "sha256": "8e373d8ecfdbf93aa757e3adc1d5dab8e1ca600f41f2c9b5b2effab4cb0bb84a"
+    },
+    "schedule_aware_q.py": {
+      "path": "multi_agent_execution\\schedule_aware_q.py",
+      "sha256": "9ed1ab428a05a195fb0a105c2287dd25b6f1f7f3d9a4ae63a627ba5a09b72bd0"
+    }
+  },
+  "python_version": "3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]"
+}
