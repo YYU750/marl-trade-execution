@@ -292,10 +292,20 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         rewards: dict[str, float] = {}
         actual_fill_this_step = {"A": 0.0, "B": 0.0}
         weighted_fill_cash = {"A": 0.0, "B": 0.0}
+        trace_costs = None if trace_rows is None else {
+            name: dict.fromkeys(("price_drift", "quote_offset", "temporary_impact", "fee"), 0.0)
+            for name in ("A", "B")
+        }
         for fill in fill_events:
             impact_adjustment = (temp_impact_bps if fill.liquidity == "taker" else 0.0)
             execution_price = fill.price * (1.0 + impact_adjustment / 10_000.0)
             fee_per_share = execution_price * fee_bps / 10_000.0
+            if trace_costs is not None:
+                weight = fill.quantity * 10_000.0 / (config.order_size * initial_mid)
+                trace_costs[fill.agent]["price_drift"] += weight * (mid_before - initial_mid)
+                trace_costs[fill.agent]["quote_offset"] += weight * (fill.price - mid_before)
+                trace_costs[fill.agent]["temporary_impact"] += weight * (execution_price - fill.price)
+                trace_costs[fill.agent]["fee"] += weight * fee_per_share
             actual_fill_this_step[fill.agent] += fill.quantity
             weighted_fill_cash[fill.agent] += fill.quantity * (execution_price + fee_per_share)
             gross_cash[fill.agent] += fill.quantity * execution_price
@@ -378,7 +388,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                          if hasattr(agents[name], "state_key")
                          else discretize_state(observations[name], agents[name].opponent_aware))
                 trace_rows.append({
-                    "trace_scope": "illustrative_post_checkpoint_online_update_not_aggregate_evaluation",
+                    "trace_scope": ("illustrative_post_checkpoint_online_update_not_aggregate_evaluation"
+                                    if training else "frozen_checkpoint_replay"),
                     "seed": seed,
                     "scenario_multiplier": volatility_multiplier,
                     "step": t + 1,
@@ -425,6 +436,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                                                   actual_fill_this_step[name]
                                                   if actual_fill_this_step[name] else None),
                     "weighted_step_reward": rewards[name],
+                    **{f"{key}_cost_bps": value for key, value in trace_costs[name].items()},
                     "terminal_unfilled_and_opportunity_adjustment_reward": td_reward - rewards[name],
                     "td_reward": td_reward,
                     "gamma": config.discount,

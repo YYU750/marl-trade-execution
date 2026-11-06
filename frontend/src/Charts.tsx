@@ -3,7 +3,7 @@ import { init, use, type EChartsCoreOption, type EChartsType } from 'echarts/cor
 import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, MarkPointComponent, TooltipComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
-import { actionLabels, actions, agents, num, type Replay } from './replay'
+import { actionLabels, agents, num, replayActions, type Replay } from './replay'
 import styles from './Dashboard.module.css'
 
 use([BarChart, LineChart, GridComponent, LegendComponent, MarkPointComponent, TooltipComponent, SVGRenderer])
@@ -139,19 +139,19 @@ export function CumulativeCostChart({ steps, current }: { steps: Replay['steps']
   return <Chart option={option} label={`A/B 累计成交成本，当前第 ${current + 1} 步`} />
 }
 
-export function ActionChart({ summary }: { summary: Replay['summary'] }) {
+export function ActionChart({ summary, limit }: { summary: Replay['summary']; limit: boolean }) {
   const option = useMemo(() => ({
     animation: false, color: palette, tooltip: { ...tooltip, axisPointer: { type: 'shadow' } },
     legend: { top: 0, textStyle: { color: textColor } },
-    grid: { left: 100, right: 28, top: 34, bottom: 28 },
+    grid: { left: limit ? 110 : 100, right: 28, top: 34, bottom: 28 },
     xAxis: { ...valueAxis, minInterval: 1 },
-    yAxis: { ...axis, type: 'category', inverse: true, data: actions.map(action => actionLabels[action]) },
+    yAxis: { ...axis, type: 'category', inverse: true, data: replayActions(limit).map(action => actionLabels[action]) },
     series: agents.map(id => ({
       name: `基金 ${id}`, type: 'bar', barMaxWidth: 13,
       label: { show: true, position: 'right', color: '#edfaff' },
       itemStyle: { borderRadius: [0, 4, 4, 0] },
-      data: actions.map(action => summary[`${id}_action_counts`][action] ?? 0),
+      data: replayActions(limit).map(action => summary[`${id}_action_counts`][action] ?? 0),
     })),
-  }), [summary])
+  }), [summary, limit])
   return <Chart option={option} label="A/B 各动作档位的选择次数" />
 }
