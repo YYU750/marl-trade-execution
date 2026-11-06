@@ -81,6 +81,10 @@ class Observation:
     base_slice: float
     horizon: int
     volatility_bps: float
+    open_order_qty: float = 0.0
+    queue_ahead: float = 0.0
+    limit_price: float = 0.0
+    order_age_steps: int = 0
 
 
 def feasible_action_floor(obs: Observation, config: Config) -> tuple[float, int]:
@@ -249,10 +253,15 @@ class OpponentAgent:
 
 def make_observation(t: int, remaining: float, mid: float, initial: float,
                      opponent_previous_qty: float, config: Config,
-                     volatility_multiplier: float = 1.0) -> Observation:
+                     volatility_multiplier: float = 1.0,
+                     open_order_qty: float = 0.0,
+                     queue_ahead: float = 0.0,
+                     limit_price: float = 0.0,
+                     order_age_steps: int = 0) -> Observation:
     return Observation(t, remaining, mid, initial, opponent_previous_qty,
                        config.base_slice, config.horizon,
-                       config.step_volatility_bps * volatility_multiplier)
+                       config.step_volatility_bps * volatility_multiplier,
+                       open_order_qty, queue_ahead, limit_price, order_age_steps)
 
 
 def run_episode(policy: str, opponent_name: str, fee_bps: float, seed: int,

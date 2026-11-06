@@ -9,7 +9,7 @@ from typing import Any
 
 from run_advanced_self_play import DEFAULT_OUT, SCENARIOS, episode, write_csv
 from run_standard_benchmark import Config
-from schedule_aware_q import ScheduleAwareQLearningAgent
+from schedule_aware_q import LimitOrderAwareQLearningAgent
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,8 +28,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def agent_from_payload(config: Config, payload: dict[str, Any]) -> ScheduleAwareQLearningAgent:
-    agent = ScheduleAwareQLearningAgent(config, opponent_aware=True)
+def agent_from_payload(config: Config, payload: dict[str, Any]) -> LimitOrderAwareQLearningAgent:
+    if payload.get("state_encoding") not in (
+        None, LimitOrderAwareQLearningAgent.state_encoding,
+    ):
+        raise ValueError(
+            "Checkpoint uses a different state encoding; provide a checkpoint "
+            "from outputs/advanced_self_play_limit_orders."
+        )
+    agent = LimitOrderAwareQLearningAgent(config, opponent_aware=True)
     agent.q = {
         tuple(int(value) for value in state.split("|")): [float(q) for q in values]
         for state, values in payload["q"].items()
@@ -90,10 +97,14 @@ def main() -> None:
         "B_cost_bps": episode_result["cost_B_bps"],
         "A_completion": episode_result["completion_A"],
         "B_completion": episode_result["completion_B"],
+        "A_filled_shares": episode_result["filled_A"],
+        "B_filled_shares": episode_result["filled_B"],
+        "A_unfilled_shares": episode_result["unfilled_A"],
+        "B_unfilled_shares": episode_result["unfilled_B"],
         "note": (
             "Both actions are selected from the same pre-trade snapshot. The saved checkpoint is "
             "loaded into temporary mutable copies; these 60 steps demonstrate online Q updates "
-            "and are excluded from the main cross-play statistics."
+            "with queue-dependent partial fills and are excluded from the main cross-play statistics."
         ),
     }
     summary_path = args.output.with_suffix(".summary.json")

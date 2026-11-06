@@ -19,7 +19,11 @@ from pathlib import Path
 from typing import Any
 
 import run_standard_benchmark as sim
-from schedule_aware_q import ScheduleAwareQLearningAgent, ThresholdAlignedDoubleQAgent
+from schedule_aware_q import (
+    LimitOrderAwareQLearningAgent,
+    ScheduleAwareQLearningAgent,
+    ThresholdAlignedDoubleQAgent,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -79,6 +83,11 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def load_advanced_q(path: Path, config: sim.Config) -> sim.QLearningAgent:
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("state_encoding") == LimitOrderAwareQLearningAgent.state_encoding:
+        raise ValueError(
+            "This comparison uses the legacy full-fill environment. A limit-order "
+            "Q table must be compared with rule policies in the same limit-order simulator."
+        )
     agent_type = (ScheduleAwareQLearningAgent
                   if payload.get("state_encoding") == ScheduleAwareQLearningAgent.state_encoding
                   else sim.QLearningAgent)
