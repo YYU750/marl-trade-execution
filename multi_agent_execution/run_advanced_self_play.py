@@ -32,6 +32,7 @@ from limit_order_book import (
     ChildOrder,
     Fill,
     SyntheticLOBConfig,
+    deadline_urgency,
     make_market_tape,
     match_marketable_orders,
     match_passive_orders,
@@ -157,10 +158,13 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             seed: int, fee_bps: float, volatility_multiplier: float,
             epsilon: float = 0.0, training: bool = False,
             trace_rows: list[dict[str, Any]] | None = None,
-            completion_mode: str = "autonomous") -> dict[str, Any]:
+            completion_mode: str = "autonomous",
+            deadline_c_overlay: bool = False) -> dict[str, Any]:
     """Run one synchronous episode with event-based limit-order execution."""
     if completion_mode not in {"autonomous", "none"}:
         raise ValueError("completion_mode must be 'autonomous' or 'none'")
+    if deadline_c_overlay and training:
+        raise ValueError("The C overlay is evaluation-only; train the Q agents without action overrides")
     rng_a = random.Random(seed ^ 0x13579BDF)
     rng_b = random.Random(seed ^ 0x2468ACE0)
     tape = make_market_tape(
@@ -179,6 +183,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     forced_cost_contribution_bps = {"A": 0.0, "B": 0.0}
     schedule_deficit_penalty_total = {"A": 0.0, "B": 0.0}
     terminal_residual_penalty_total = {"A": 0.0, "B": 0.0}
+    deadline_urgency_steps = {"A": 0, "B": 0}
+    deadline_action_overrides = {"A": 0, "B": 0}
     gross_cash = {"A": 0.0, "B": 0.0}
     fee_cash = {"A": 0.0, "B": 0.0}
     prev_qty = {"A": 0.0, "B": 0.0}
@@ -236,6 +242,9 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         }
         action_idx: dict[str, int] = {}
         proposed_action_idx: dict[str, int] = {}
+        action_floor: dict[str, int] = {"A": 0, "B": 0}
+        urgency_ticks: dict[str, int] = {"A": 0, "B": 0}
+        urgency_stage: dict[str, str] = {"A": "disabled", "B": "disabled"}
         for name in ("A", "B"):
             if training:
                 proposed_action_idx[name] = agents[name].select(
@@ -243,11 +252,21 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 )
             else:
                 proposed_action_idx[name] = frozen_action(agents[name], observations[name], rngs[name])
-            # Intraday decisions always remain with the Agent. The terminal
-            # completion backstop acts only after the final step's matching.
-            action_idx[name] = proposed_action_idx[name]
+            if deadline_c_overlay:
+                action_floor[name], urgency_ticks[name], urgency_stage[name] = deadline_urgency(
+                    t, config.horizon, remaining[name], config.order_size,
+                )
+                if urgency_stage[name] not in {"on_schedule", "early_autonomous_window"}:
+                    deadline_urgency_steps[name] += 1
+            else:
+                urgency_stage[name] = "agent_autonomous"
+            action_idx[name] = max(proposed_action_idx[name], action_floor[name])
+            if action_idx[name] != proposed_action_idx[name]:
+                deadline_action_overrides[name] += 1
 
         submitted_this_step = {"A": 0.0, "B": 0.0}
+        policy_action_qty = {"A": 0.0, "B": 0.0}
+        deadline_catch_up_qty = {"A": 0.0, "B": 0.0}
         replaced_qty = {"A": 0.0, "B": 0.0}
         order_type_this_step = {"A": "hold_or_wait", "B": "hold_or_wait"}
         limit_price_this_step: dict[str, float | None] = {"A": None, "B": None}
@@ -263,13 +282,22 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 replaced_qty[name] = old.remaining_qty
                 cancelled[name] += old.remaining_qty
                 orders[name] = None
-            order_qty = min(remaining[name], config.base_slice * ACTIONS[idx])
+            policy_action_qty[name] = min(remaining[name], config.base_slice * ACTIONS[idx])
+            order_qty = policy_action_qty[name]
+            if (deadline_c_overlay
+                    and urgency_stage[name] in {"urgency_window", "high_urgency_window", "final_sweep_window"}
+                    and idx == 4):
+                steps_left = max(1, config.horizon - t)
+                catch_up_qty = remaining[name] / steps_left
+                order_qty = min(remaining[name], max(order_qty, catch_up_qty))
+                deadline_catch_up_qty[name] = max(0.0, order_qty - policy_action_qty[name])
             submitted_this_step[name] = order_qty
             submitted[name] += order_qty
             if order_qty <= 1e-9:
                 continue
             limit_price, marketable, tier, order_type = quote_for_action(
                 idx, mid, config.half_spread_bps, LOB_CONFIG.tick_bps,
+                urgency_ticks[name],
             )
             limit_price_this_step[name] = limit_price
             order_type_this_step[name] = order_type
@@ -468,6 +496,12 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                     "proposed_action": ACTION_NAMES[proposed_action_idx[name]],
                     "action": ACTION_NAMES[action_idx[name]],
                     "action_multiplier": ACTIONS[action_idx[name]],
+                    "deadline_c_overlay_enabled": deadline_c_overlay,
+                    "deadline_action_floor": action_floor[name],
+                    "deadline_urgency_ticks": urgency_ticks[name],
+                    "deadline_urgency_stage": urgency_stage[name],
+                    "policy_action_qty": policy_action_qty[name],
+                    "deadline_catch_up_qty": deadline_catch_up_qty[name],
                     "order_type": order_type_this_step[name],
                     "limit_price": limit_price_this_step[name],
                     "submitted_qty": submitted_this_step[name],
@@ -556,6 +590,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         "forced_completion_B": forced_fills["B"],
         "forced_completion_cost_contribution_A_bps": forced_cost_contribution_bps["A"],
         "forced_completion_cost_contribution_B_bps": forced_cost_contribution_bps["B"],
+        "deadline_urgency_steps_A": deadline_urgency_steps["A"],
+        "deadline_urgency_steps_B": deadline_urgency_steps["B"],
+        "deadline_action_overrides_A": deadline_action_overrides["A"],
+        "deadline_action_overrides_B": deadline_action_overrides["B"],
         "schedule_deficit_penalty_A_bps": schedule_deficit_penalty_total["A"],
         "schedule_deficit_penalty_B_bps": schedule_deficit_penalty_total["B"],
         "terminal_residual_penalty_A_bps": terminal_residual_penalty_total["A"],

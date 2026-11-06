@@ -18,6 +18,14 @@ python .\run_experiment.py
 python .\run_advanced_self_play.py
 ```
 
+可用冻结的当前 Q 检查点单独评估方案 C 截止加急对兜底量的影响：
+
+```powershell
+python .\compare_deadline_c_overlay.py
+```
+
+该脚本只在评估时覆盖一部分盘中动作，不改变训练和主入口的默认策略；配对结果写入 `outputs/c_overlay_comparison_current_model/`。
+
 默认参数：
 
 | 参数 | 默认值 |
