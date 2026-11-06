@@ -104,6 +104,7 @@ function ReplayConfig({ replay, onScenario, preset }: {
         <div><dt>基金 A 母单</dt><dd>{shares(config.order_size_per_agent_shares)} 股</dd></div>
         <div><dt>基金 B 母单</dt><dd>{shares(config.order_size_per_agent_shares)} 股</dd></div>
         <div><dt>当前情景</dt><dd>{scenarioLabel(replay.scenario)}</dd></div>
+        <div><dt>完单机制</dt><dd>{replay.completion_mode === 'autonomous' ? '期末兜底成交' : '无期末兜底'}</dd></div>
         <div><dt>检查点 / 种子</dt><dd>{replay.checkpoint_episode} / {replay.seed}</dd></div>
       </dl>
       <h3>内置市场情景</h3>
@@ -174,6 +175,9 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
   const active = row.agents[agent]
   const selected = active.decision
   const limit = replay.schema_version === '2.0'
+  const finalStep = current === length - 1
+  const overviewRemaining = (id: Agent) => finalStep ? replay.summary[`${id}_unfilled_shares`]
+    : row.agents[id].observation.own_remaining_shares
   const orderSize = replay.config.order_size_per_agent_shares
   const totalCosts = useMemo(() => agents.map(id => aggregateCosts(replay, id)), [replay])
   const cumulative = costRange === 'cumulative'
@@ -261,14 +265,15 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
         <section className={`${styles.glass} ${styles.metricBand}`} aria-label="交易前状态">
           <Metrics values={[
             ['当前中间价', num(market.mid_before, 4)], ['当前步数', `${row.step} / ${length}`],
-            ['A 剩余订单', <>{shares(row.agents.A.observation.own_remaining_shares)} <small>股</small></>],
-            ['B 剩余订单', <>{shares(row.agents.B.observation.own_remaining_shares)} <small>股</small></>],
+            [finalStep ? 'A 期末剩余' : 'A 步前剩余', <>{shares(overviewRemaining('A'))} <small>股</small></>],
+            [finalStep ? 'B 期末剩余' : 'B 步前剩余', <>{shares(overviewRemaining('B'))} <small>股</small></>],
           ]} />
         </section>
         <div className={styles.pair}>
           {agents.map(id => {
             const record = row.agents[id]
-            const completed = 1 - record.observation.own_remaining_shares / orderSize
+            const completed = finalStep ? replay.summary[`${id}_completion_rate`] : 1 - overviewRemaining(id) / orderSize
+            const forced = record.execution.forced_completion_quantity_shares ?? 0
             return <section className={`${styles.glass} ${styles.agentCard}`} data-agent={id} key={id}>
               <div className={styles.panelHead}>
                 <Heading icon="bank">基金 {id}</Heading>
@@ -281,7 +286,8 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
               <div className={styles.agentFacts}>
                 <span>Q 值 <b>{record.decision.selected_q_value === null ? '—' : num(record.decision.selected_q_value, 4)}</b></span>
                 <span>已完成 <b>{percent(completed)}</b></span>
-                {limit ? <span>本步实际成交 <b>{shares(fillQuantity(record))} 股</b></span>
+                {limit ? <span>普通成交 <b>{shares(fillQuantity(record) - forced)} 股</b>{forced > 0 &&
+                  <> · 兜底 <b>{shares(forced)} 股</b></>}</span>
                   : <span>上期对手成交 <b>{shares(record.observation.opponent_previous_quantity)} 股</b></span>}
               </div>
             </section>
@@ -296,7 +302,7 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
             <Heading icon="layers">共同市场反馈</Heading>
             <dl className={styles.rows}>
               <div><dt>{limit ? '联合提交' : '联合下单'}</dt><dd>{shares(market.joint_submitted_quantity_shares)} 股</dd></div>
-              {limit && <div><dt>联合实际成交</dt><dd>{shares(market.joint_actual_filled_quantity_shares ?? 0)} 股</dd></div>}
+              {limit && <div><dt>联合实际成交{finalStep && replay.completion_mode === 'autonomous' ? '（含兜底）' : ''}</dt><dd>{shares(market.joint_actual_filled_quantity_shares ?? 0)} 股</dd></div>}
               <div><dt>临时冲击</dt><dd>{bp(market.temporary_impact_bps)}</dd></div>
               <div><dt>下一中间价</dt><dd>{num(market.mid_after, 4)}</dd></div>
             </dl>
@@ -424,6 +430,7 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
               <p>提交 {shares(entry.decision.selected_quantity_shares)} 股 · 实际成交 {shares(fillQuantity(entry))} 股
                 {price !== null && ` · 含费价 ${num(price, 4)}`}</p>
               <p className={styles.hint}>被动成交 {shares(order.maker_filled)} 股 · 主动成交 {shares(order.taker_filled)} 股
+                {(entry.execution.forced_completion_quantity_shares ?? 0) > 0 && ` · 兜底成交 ${shares(entry.execution.forced_completion_quantity_shares!)} 股`}
                 {order.open_after > 0 && ` · 队列前方 ${shares(order.queue_ahead_after)} 股`}</p>
               <OrderEvents entry={entry} />
             </div>
@@ -447,7 +454,9 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
             <span className={styles.hint}>总实施缺口</span>
             <div className={styles.big}>{num(totals[index], 4)} <small>bp</small></div>
             <div className={styles.agentFacts}><span>完成率 <b>{percent(replay.summary[`${id}_completion_rate`])}</b></span>
-              <span>未完成 <b>{shares(replay.summary[`${id}_unfilled_shares`])} 股</b></span></div>
+              <span>未完成 <b>{shares(replay.summary[`${id}_unfilled_shares`])} 股</b></span>
+              {replay.completion_mode === 'autonomous' && <span>期末兜底 <b>{shares(replay.summary[`${id}_forced_completion_shares`] ?? 0)} 股</b>
+                {' · '}{bp(replay.summary[`${id}_forced_completion_cost_bps`] ?? 0, 2)}（已计入总成本）</span>}</div>
           </section>
         )}</div>
         <div className={styles.pair}>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export both scenarios without the terminal completion backstop (schema 2.0)."""
+"""Export frozen limit-order replays for both volatility scenarios."""
 from __future__ import annotations
 
 import argparse
@@ -79,6 +79,7 @@ def serialize_agent(row: dict, agent: LimitOrderAwareQLearningAgent, config: Con
             "weighted_step_shortfall_bps": -row["weighted_step_reward"],
             "cost_components_bps_of_parent_order": costs,
             "actual_filled_quantity_shares": row["actual_filled_qty"],
+            "forced_completion_quantity_shares": row["forced_completion_qty"],
             "limit_order": {
                 "type": row["order_type"],
                 "limit_price": row["limit_price"],
@@ -94,7 +95,7 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
     before = {name: policy_hash(agent) for name, agent in policies.items()}
     rows: list[dict] = []
     result = episode(policies["A"], policies["B"], config, args.seed, args.fee_bps,
-                     multiplier, epsilon=0.0, training=False, trace_rows=rows, completion_mode="none")
+                     multiplier, epsilon=0.0, training=False, trace_rows=rows, completion_mode=args.completion_mode)
     after = {name: policy_hash(agent) for name, agent in policies.items()}
     if before != after or len(rows) != config.horizon * len(AGENTS):
         raise ValueError("Invalid frozen replay")
@@ -126,6 +127,8 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
             f"{name}_cost_bps": cost,
             f"{name}_completion_rate": result[f"completion_{name}"],
             f"{name}_unfilled_shares": unfilled,
+            f"{name}_forced_completion_shares": result[f"forced_completion_{name}"],
+            f"{name}_forced_completion_cost_bps": result[f"forced_completion_cost_contribution_{name}_bps"],
             f"{name}_action_counts": json.loads(result[f"actions_{name}"]),
         })
         summary["cost_reconciliation"][name] = {
@@ -136,7 +139,7 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
     return {
         "schema_version": "2.0",
         "demo_type": "frozen_limit_order_replay",
-        "completion_mode": "none",
+        "completion_mode": args.completion_mode,
         "source_ref": args.source_ref,
         "checkpoint_episode": args.checkpoint,
         "seed": args.seed,
@@ -163,8 +166,8 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--checkpoint-file", type=Path,
-                        default=DEFAULT_OUT.with_name("advanced_self_play_no_completion") / "checkpoint_qtables_run1.json")
+    parser.add_argument("--checkpoint-file", type=Path)
+    parser.add_argument("--completion-mode", choices=("autonomous", "none"), default="autonomous")
     parser.add_argument("--checkpoint", type=int, default=500)
     parser.add_argument("--seed", type=int, default=20261105)
     parser.add_argument("--fee-bps", type=float, default=30.0)
@@ -173,7 +176,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.fee_bps < 0:
         parser.error("--fee-bps must be nonnegative")
-    checkpoint = json.loads(args.checkpoint_file.read_text(encoding="utf-8"))[str(args.checkpoint)]
+    output = DEFAULT_OUT if args.completion_mode == "autonomous" else DEFAULT_OUT.with_name("advanced_self_play_no_completion")
+    checkpoint_file = args.checkpoint_file or output / "checkpoint_qtables_run1.json"
+    checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))[str(args.checkpoint)]
     if any(checkpoint[name].get("state_encoding") != LimitOrderAwareQLearningAgent.state_encoding for name in AGENTS):
         parser.error("expected a limit-order checkpoint")
     replays = [(name, build_replay(checkpoint, args, name, multiplier)) for name, multiplier in SCENARIOS]

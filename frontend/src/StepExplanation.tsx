@@ -19,7 +19,8 @@ export function decisionReason(entry: AgentStep, limit: boolean) {
 export function OrderEvents({ entry }: { entry: AgentStep }) {
   const order = entry.execution.limit_order
   if (!order) return null
-  const fill = fillQuantity(entry)
+  const forced = entry.execution.forced_completion_quantity_shares ?? 0
+  const fill = fillQuantity(entry) - forced
   const offered = entry.decision.selected_quantity_shares || order.open_before
   const events: string[] = []
   if (fill > 0) events.push(fill + 1e-6 < offered ? '部分成交' : '全部成交')
@@ -28,6 +29,7 @@ export function OrderEvents({ entry }: { entry: AgentStep }) {
   if (order.expired > 0) events.push(`挂单到期 ${shares(order.expired)} 股`)
   if (order.ioc_cancelled > 0) events.push(`IOC 撤销 ${shares(order.ioc_cancelled)} 股`)
   if (order.deadline_cancelled > 0) events.push(`期末撤销 ${shares(order.deadline_cancelled)} 股`)
+  if (forced > 0) events.push(`期末兜底成交 ${shares(forced)} 股`)
   return <div className={styles.orderEvents}>{(events.length ? events : ['无成交或订单变动']).map(event =>
     <span key={event} className={styles.chip}>{event}</span>
   )}</div>
@@ -49,7 +51,7 @@ function explainExecution(entry: AgentStep) {
     return '本步没有提交新单。已有挂单仍可参与撮合，所以等待期间也可能成交。'
   }
   if (entry.observation.own_remaining_shares === 0) return '母单已没有剩余股数，本步无需提交新订单。'
-  return '本步没有新提交，也没有可继续撮合的挂单，母单剩余量保持不变。'
+  return '本步没有新提交，也没有可继续参与普通撮合的挂单。'
 }
 
 export function StepExplanation({ replay, current, agent, onOpen }: {
@@ -123,7 +125,8 @@ export function StepExplanation({ replay, current, agent, onOpen }: {
         </div>
         <div>
           <dt>业务解释</dt>
-          <dd>{explainExecution(entry)}</dd>
+          <dd>{explainExecution(entry)}{(execution.forced_completion_quantity_shares ?? 0) > 0 &&
+            ' 普通撮合结束后，环境以模拟收盘价格对剩余母单兜底成交。'}</dd>
         </div>
       </dl>
     </dialog>

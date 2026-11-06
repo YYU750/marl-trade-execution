@@ -24,7 +24,7 @@ npm run dev
 
 ## 数据接入
 
-新版内置样例为 `public/limit_replay_normal.json` 和 `public/limit_replay_high_volatility.json`。两者均使用 `wuxinhan-1@a363536` 的限价单模型，以相同的第 500 回合检查点、回放种子 20261105 和单边 30 bp 手续费生成。旧版 `public/demo_frozen_episode.json` 可单独导入作历史演示。
+新版内置样例为 `public/limit_replay_normal.json` 和 `public/limit_replay_high_volatility.json`。两者均使用 `wuxinhan-1@7906ab8` 的期末兜底模式，以相同的第 500 回合检查点、回放种子 20261105 和单边 30 bp 手续费生成。第 60 步总览显示撮合后的期末剩余，决策页仍展示决策前状态。回合总结单列兜底股数及其已计入总成本的贡献。旧版 `public/demo_frozen_episode.json` 可单独导入作历史演示。
 
 可用同版模型的检查点重新导出两份回放。在 `multi_agent_execution` 目录执行：
 
@@ -32,7 +32,7 @@ npm run dev
 python .\export_limit_order_replay.py --output-dir ..\frontend\public
 ```
 
-默认读取无兜底训练产物 `outputs/advanced_self_play_no_completion/checkpoint_qtables_run1.json`（训练时使用 `--completion-mode none`）。也可以用 `--checkpoint-file`、`--checkpoint` 和 `--source-ref` 指定来源。当前前端回放和导出格式采用无兜底模式，后端默认的期末兜底模式需单独展示兜底成交及其成本。导出会检查冻结前后的策略哈希及成本复算。
+默认读取兜底模式训练产物 `outputs/advanced_self_play_autonomous_completion/checkpoint_qtables_run1.json`。使用 `--completion-mode none` 可导出无兜底对照，建议将其输出到独立目录后通过前端导入。也可以用 `--checkpoint-file`、`--checkpoint` 和 `--source-ref` 指定来源。导出会检查冻结前后的策略哈希及成本复算。
 
 可以在 `.env.local` 设置 `VITE_REPLAY_URL` 指向兼容的默认 JSON 地址。浏览器跨域读取时，数据服务需允许对应来源。接口结构变化集中在 `src/replay.ts` 的类型与校验函数中。
 

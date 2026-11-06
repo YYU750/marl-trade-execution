@@ -54,12 +54,14 @@ export interface AgentStep {
     weighted_step_shortfall_bps: number
     cost_components_bps_of_parent_order: Costs
     actual_filled_quantity_shares?: number
+    forced_completion_quantity_shares?: number
     limit_order?: LimitOrder
   }
 }
 
 export interface Replay {
   schema_version: '1.0' | '2.0'
+  completion_mode?: 'autonomous' | 'none'
   source_ref: string
   checkpoint_episode: number
   seed: number
@@ -91,6 +93,7 @@ export interface Replay {
     }
   }[]
   summary: Record<`${Agent}_${'cost_bps' | 'completion_rate' | 'unfilled_shares'}`, number>
+    & Partial<Record<`${Agent}_${'forced_completion_shares' | 'forced_completion_cost_bps'}`, number>>
     & Record<`${Agent}_action_counts`, Partial<Record<Action, number>>>
     & { cost_reconciliation: Record<Agent, {
       sum_of_step_shortfalls_bps: number
@@ -195,7 +198,9 @@ export function parseReplay(value: unknown): Replay {
         check(orderFields.every(field => Number(order[field]) >= 0), '限价单数量')
         check(typeof order.type === 'string' && (order.limit_price === null ||
           (typeof order.limit_price === 'number' && Number.isFinite(order.limit_price) && order.limit_price > 0)), '限价单报价')
-        check(Math.abs(Number(order.maker_filled) + Number(order.taker_filled) - filled) < 1e-6, '成交量复算')
+        const forced = execution.forced_completion_quantity_shares ?? 0
+        check(typeof forced === 'number' && Number.isFinite(forced) && forced >= 0 && forced <= filled + 1e-6, '兜底成交量')
+        check(Math.abs(Number(order.maker_filled) + Number(order.taker_filled) + forced - filled) < 1e-6, '成交量复算')
         check(Math.abs(costComponents(true).reduce((sum, key) => sum + Number(parts[key]), 0) -
           Number(execution.weighted_step_shortfall_bps)) < 1e-6, '当步成本复算')
         jointFilled += filled
