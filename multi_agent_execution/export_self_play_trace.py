@@ -101,7 +101,7 @@ def main() -> None:
         "B_filled_shares": episode_result["filled_B"],
         "A_unfilled_shares": episode_result["unfilled_A"],
         "B_unfilled_shares": episode_result["unfilled_B"],
-        "completion_mode": "c",
+        "completion_mode": "autonomous",
         "A_forced_completion_shares": episode_result["forced_completion_A"],
         "B_forced_completion_shares": episode_result["forced_completion_B"],
         "A_forced_completion_cost_contribution_bps": episode_result[
@@ -113,7 +113,7 @@ def main() -> None:
         "note": (
             "Both actions are selected from the same pre-trade snapshot. The saved checkpoint is "
             "loaded into temporary mutable copies; these 60 steps demonstrate online Q updates "
-            "with queue-dependent partial fills, deadline urgency and terminal completion. The "
+            "with queue-dependent partial fills and agent-controlled intraday actions. The "
             "synthetic terminal backstop, not the Q policy alone, guarantees completion; this "
             "illustration is excluded from the main cross-play statistics."
         ),

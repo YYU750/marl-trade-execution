@@ -43,7 +43,7 @@ from limit_order_book import (
 from schedule_aware_q import LimitOrderAwareQLearningAgent
 
 
-DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play_completion_c"
+DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play_autonomous_completion"
 SCENARIOS = (("normal", 1.0), ("high_volatility", 2.0))
 ACTION_NAMES = (
     "hold_or_wait", "passive_half_deep", "passive_base_best_bid",
@@ -63,8 +63,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fee-bps", type=float, default=30.0, help="one-way fee in basis points; 30bp = 0.3%%")
     parser.add_argument("--seed", type=int, default=20261103)
     parser.add_argument(
-        "--completion-mode", choices=("c", "none"), default="c",
-        help="C applies deadline urgency and a terminal completion backstop; none preserves the no-guarantee baseline",
+        "--completion-mode", choices=("autonomous", "c", "none"), default="autonomous",
+        help=("autonomous keeps every intraday action under Q-learning and only uses a terminal "
+              "completion backstop; c also applies the legacy deadline urgency overlay; none "
+              "does not guarantee completion"),
     )
     parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
@@ -75,7 +77,11 @@ def parse_args() -> argparse.Namespace:
     if args.fee_bps < 0:
         parser.error("fee-bps cannot be negative")
     if args.output_dir is None:
-        suffix = "completion_c" if args.completion_mode == "c" else "no_completion"
+        suffix = {
+            "autonomous": "autonomous_completion",
+            "c": "completion_c",
+            "none": "no_completion",
+        }[args.completion_mode]
         args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}"
     return args
 
@@ -147,10 +153,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             seed: int, fee_bps: float, volatility_multiplier: float,
             epsilon: float = 0.0, training: bool = False,
             trace_rows: list[dict[str, Any]] | None = None,
-            completion_mode: str = "c") -> dict[str, Any]:
+            completion_mode: str = "autonomous") -> dict[str, Any]:
     """Run one synchronous episode with event-based limit-order execution."""
-    if completion_mode not in {"c", "none"}:
-        raise ValueError("completion_mode must be 'c' or 'none'")
+    if completion_mode not in {"autonomous", "c", "none"}:
+        raise ValueError("completion_mode must be 'autonomous', 'c', or 'none'")
     rng_a = random.Random(seed ^ 0x13579BDF)
     rng_b = random.Random(seed ^ 0x2468ACE0)
     tape = make_market_tape(
@@ -242,6 +248,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 )
                 if urgency_stage[name] not in {"on_schedule", "early_autonomous_window"}:
                     deadline_urgency_steps[name] += 1
+            elif completion_mode == "autonomous":
+                # The default mode leaves every intraday choice to the Q agent.
+                # Only the terminal environment backstop enforces completion.
+                urgency_stage[name] = "agent_autonomous"
             action_idx[name] = max(proposed_action_idx[name], action_floor[name])
             if action_idx[name] != proposed_action_idx[name]:
                 deadline_action_overrides[name] += 1
@@ -328,7 +338,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         forced_completion_qty = {"A": 0.0, "B": 0.0}
         forced_completion_price: float | None = None
         forced_completion_impact_bps = 0.0
-        if completion_mode == "c" and terminal:
+        if completion_mode in {"autonomous", "c"} and terminal:
             regular_fills = {
                 name: sum(fill.quantity for fill in fill_events if fill.agent == name)
                 for name in ("A", "B")
@@ -814,6 +824,30 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                   best_response: list[dict[str, Any]],
                   diagnostics: list[dict[str, Any]]) -> str:
     final_episode = args.episodes
+    if args.completion_mode == "autonomous":
+        mode_note = (
+            "- 完单方式：全程由 Q-learning Agent 自主选择 60 个时间步的动作、报价和常规子单数量；"
+            "不按进度覆盖动作。第 60 步普通撮合后，环境只对剩余母单执行合成收盘兜底，因此模拟器内完成率为 100%；"
+            "兜底成交量和成本单独报告，不能算作 Agent 自主成交。"
+        )
+        mode_label = "自主决策 + 终端完单兜底"
+        urgency_note = "默认模式没有盘中加急；Agent 每步选出的 Q 动作直接进入限价单流程。"
+        output_path = "outputs/advanced_self_play_autonomous_completion"
+    elif args.completion_mode == "c":
+        mode_note = (
+            "- 完单方式：启用旧版 C 截止保护。Agent 盘中动作可能被 70%、85%、95% 阶段的最低动作和报价上限覆盖；"
+            "第 60 步另有收盘兜底。完成率由环境保障，不代表纯自主策略完成。"
+        )
+        mode_label = "旧版 C 盘中加急 + 终端完单兜底"
+        urgency_note = "旧版 C 加急可提高报价并触达更深档位；最终收盘兜底仍按合成冲击曲线计价。"
+        output_path = "outputs/advanced_self_play_completion_c"
+    else:
+        mode_note = (
+            "- 完单方式：未启用终端完单兜底；所有盘中动作由 Q-learning 自主选择，订单可能无法按时完成。"
+        )
+        mode_label = "Agent 自主决策、无完单兜底"
+        urgency_note = "无盘中加急或终端强制成交；未完成余量按终局机会成本和学习惩罚记账。"
+        output_path = "outputs/advanced_self_play_no_completion"
     lines = [
         "# 双边同步 Q-learning：本轮运行记录", "",
         f"- 训练：{args.training_runs} 个独立种子，每个 {args.episodes} 回合；每回合 {Config().horizon} 个 30 秒时间步。",
@@ -821,13 +855,12 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         "- 训练在正常波动环境进行；训练检查点分别冻结后，在正常与 2 倍波动场景做交叉对局。",
         f"- 本结果属于路线 A（A/B 双边同步 Independent Q-learning）；路线 B 的规则引导 Double Q 对固定规则对手实验须单独报告。",
         f"- 当前单边费率为 {args.fee_bps:g} bp（{args.fee_bps / 100:g}%）；按初始价 {Config().initial_price:g}、每方母单 {Config().order_size:,.0f} 股估算，单家满额手续费约 {Config().initial_price * Config().order_size * args.fee_bps / 10_000:,.0f}。",
-        ("- 完成方案 C 已启用：前期由 Q-learning 自主挂限价单；落后线性进度时，执行进度达到 70% 起将最低动作提高为可成交限价 IOC，70%、85%、95% 阶段的报价上限分别上移 1、3、6 个价位；截止步对剩余母单执行合成收盘强制成交。完成率 100% 是约束机制保证，不是 Q-learning 单独学出的效果。"
-         if args.completion_mode == "c" else
-         "- 完成方案 C 未启用：保留原有限价单行为，订单可能未能在截止前全部成交；此模式仅作为对照基线。"),
-        "- 普通执行仍是教学用事件驱动限价单：成交量由队列、可见卖盘和随机订单流决定；普通 IOC 只触达前两档，加急限价单可按价格上限触达更深的合成档位；C 方案最后的强制成交使用显式合成深层流动性价格曲线，并单独记录强制成交股数。",
+        f"- 完单配置：{mode_label}。",
+        mode_note,
+        "- 普通执行仍是教学用事件驱动限价单：成交量由队列、可见卖盘和随机订单流决定；普通 IOC 只触达前两档；终端兜底使用显式合成深层流动性价格曲线，并单独记录强制成交股数。",
         "- 本文件的数字仅是本次命令参数下的模拟结果，不自动代表收敛或现实市场效果。", "",
         "## 最终检查点的交叉对局", "",
-        "下表按训练运行和场景汇总 A/B 均采用最终检查点的对局。成本越低越好；C 模式成本含收盘强制成交及手续费，并同时列出强制成交股数与其成本贡献。", "",
+              f"下表按训练运行和场景汇总 A/B 均采用最终检查点的对局。成本越低越好；当前完单模式为“{mode_label}”，并同时列出终端强制成交股数与其成本贡献。", "",
         "| 训练运行 | 场景 | A 成本 (bp) | A 完成率 | A 强制股数 | A 强制成本贡献 (bp) | B 成本 (bp) | B 完成率 | B 强制股数 | B 强制成本贡献 (bp) |",
         "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
@@ -864,15 +897,15 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               f"最终检查点对照同一训练运行中保存的冻结检查点集合，候选集后悔值均值为 {statistics.fmean(regrets):.4f} bp（共 {len(regrets)} 个方向/场景/运行观测）。",
               "该量只表示相对有限检查点候选集的成本差，不是全局最优策略，也不构成纳什均衡证明。", "",
               "## 解释边界", "",
-              "- A、B 在每步基于同一交易前快照同步决策，各自只能观察自身库存、上期对手成交量和自己的当前挂单；市场之后统一处理可成交限价单和卖方主动订单流。C 模式收盘兜底数量不由 Agent 自主动作决定。",
+              "- A、B 在每步基于同一交易前快照同步决策，各自只能观察自身库存、上期对手成交量和自己的当前挂单；市场之后统一处理可成交限价单和卖方主动订单流。无论硬完单模式采用哪一种，终端兜底数量都不是 Agent 自主成交量。",
               "- 动作 0 保留已有报价或等待；动作 1–3 分别挂深档买单、最佳买价和价差内报价，动作 4 提交价格上限为卖一价上方一档的可成交限价 IOC。被动订单可部分成交并保留，队列在 4 个时间步（2 分钟）后过期；IOC 未成交余量立即撤销。",
-              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。TD 奖励只按实际成交量计算；`none` 模式下未成交母单在终局计入机会成本和未完成惩罚，C 模式下由收盘兜底成交，因此终局未完成量为零。下一状态只从已尝试动作中自举；C 的截止加急和追赶数量属于执行层覆盖，不是 Q 动作或 Q 值。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
-              "- 买方被动成交由卖方主动订单流穿过队列触发；普通主动限价成交按报价上限消耗七档合成卖盘，普通 IOC 通常只触达前两档。截止加急可触达更深档位；收盘兜底按单独公开的合成冲击价格成交。手续费只按实际成交名义金额计算。",
+              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。TD 奖励按实际成交量计算；`none` 模式下未完成母单在终局计入机会成本和惩罚，autonomous/c 模式则在第 60 步由环境兜底完成。默认 autonomous 模式的盘中实际动作等于 Agent 提出的 Q 动作；旧版 c 模式才会覆盖动作。下一状态只从已尝试动作中自举。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
+              f"- 买方被动成交由卖方主动订单流穿过队列触发；普通主动限价成交按报价上限消耗七档合成卖盘，普通 IOC 通常只触达前两档。{urgency_note}手续费只按实际成交名义金额计算。",
               "- 检查点交叉对局把已保存的策略冻结后进行组合评估，避免评估过程继续改写 Q 表；配对种子共享外生价格冲击。",
               "- 稳定性要结合多训练种子的滚动奖励、成本波动、状态覆盖与检查点交叉结果判断。单一训练曲线变平不足以证明收敛。",
               "- 历史资料若使用 0.3 bp 或 30 个时间步，未按当前手续费和 60 步配置重跑前不得与本结果并表。",
               "- 可用 export_self_play_trace.py 从保存的最终检查点生成一条额外的 A/B 同步动作、市场反馈和 Q 更新样例；说明性轨迹不进入本次交叉评估统计。",
-              "- C 模式结果写入 outputs/advanced_self_play_completion_c；`--completion-mode none` 的无兜底对照写入 outputs/advanced_self_play_no_completion。两种完成约束不同，不能仅按成本高低直接排序。规则策略配对比较仍由 run_matched_rule_q_comparison.py 单独生成，并须使用同一 C 撮合机制重新评估。",
+              f"- 本次模式结果写入 {output_path}；其他完单模式需使用各自独立目录。无兜底模式和硬完单模式的完成约束不同，不能仅按成本高低直接排序。规则策略配对比较仍由 run_matched_rule_q_comparison.py 单独生成，并须使用相同限价簿和完成约束重新评估。",
               "- 该环境是未用真实行情校准的合成订单簿，不含完整撮合交易所规则、隐藏流动性或实盘接口；队列深度、订单流和收盘深层流动性兜底均为显式模拟假设。"]
     return "\n".join(lines) + "\n"
 
@@ -942,20 +975,25 @@ def main() -> None:
             "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "state_encoding": LimitOrderAwareQLearningAgent.state_encoding,
             "reward_alignment": "implementation shortfall on actual fills; terminal unfilled-order penalty applies only in none mode; no extra inventory-risk shaping",
-            "untried_action_bootstrap": "only tried actions are included; C deadline catch-up quantity is an execution overlay, not a Q action bootstrap floor",
+            "untried_action_bootstrap": "only tried actions are included; default autonomous mode has no intraday execution overlay",
             "simultaneous_action_and_update": True,
             "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",
             "submission_vs_execution": "submitted child quantity is not treated as filled; parent inventory falls only by matched execution quantity",
             "completion_mode": args.completion_mode,
             "completion_constraint": (
-                "hard completion by a synthetic market-on-close backstop; residual quantity is fully filled at an impact-stressed average price"
+                "hard completion by a synthetic market-on-close backstop; Q-learning controls all intraday actions and residual quantity is filled at an impact-stressed average price"
+                if args.completion_mode == "autonomous" else
+                "hard completion by a synthetic market-on-close backstop; legacy c mode also applies a behind-schedule action/quote urgency overlay"
                 if args.completion_mode == "c" else
                 "none; actual completion rate is an outcome and terminal unfilled shares incur opportunity cost plus penalty"
             ),
             "deadline_urgency_policy": {
                 "enabled": args.completion_mode == "c",
-                "behind_schedule_action_floors": {"70_percent": 4, "85_percent": 4, "95_percent": 4},
-                "quote_escalation_ticks": {"70_percent": 1, "85_percent": 3, "95_percent": 6},
+                "enabled_for_default_autonomous_mode": False,
+                "behind_schedule_action_floors": ({"70_percent": 4, "85_percent": 4, "95_percent": 4}
+                                                  if args.completion_mode == "c" else {}),
+                "quote_escalation_ticks": ({"70_percent": 1, "85_percent": 3, "95_percent": 6}
+                                            if args.completion_mode == "c" else {}),
                 "terminal_backstop_price": "half-spread + tick_bps*sqrt(forced_qty/base_slice) + temporary_impact_bps_per_slice*market_impact_multiplier*step_minutes*(forced_qty/base_slice)"
             },
             "limit_order_parameters": asdict(LOB_CONFIG),

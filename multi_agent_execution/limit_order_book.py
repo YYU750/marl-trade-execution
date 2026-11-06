@@ -24,7 +24,8 @@ class SyntheticLOBConfig:
     sell_order_mean_base_slices: float = 0.70
     sell_order_log_sigma: float = 0.55
     # The first two levels support ordinary capped IOC orders. Deeper synthetic
-    # levels are exposed only when the deadline guard raises the price cap.
+    # Deeper levels are reachable only when a strategy or optional legacy
+    # deadline overlay submits a sufficiently high limit price.
     ask_depth_mean_base_slices: tuple[float, ...] = (
         0.80, 0.55, 0.40, 0.30, 0.22, 0.16, 0.12,
     )
