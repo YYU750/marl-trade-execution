@@ -1,2 +1,4 @@
 __pycache__/
 *.py[cod]
+/outputs/advanced_self_play_autonomous_completion/
+/outputs/advanced_self_play_no_completion/

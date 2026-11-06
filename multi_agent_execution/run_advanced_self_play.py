@@ -868,6 +868,7 @@ def main() -> None:
     all_training: list[dict[str, Any]] = []
     all_diagnostics: list[dict[str, Any]] = []
     all_raw: list[dict[str, Any]] = []
+    checkpoint_sha256: dict[str, str] = {}
     checkpoint_count = math.ceil(args.episodes / args.checkpoint_interval) + 1
     print(f"Advanced self-play: {args.training_runs} runs × {args.episodes} episodes; checkpoints about {checkpoint_count} per run.", flush=True)
     for run_id in range(1, args.training_runs + 1):
@@ -882,8 +883,10 @@ def main() -> None:
             str(cp): {side: snapshot_to_json(snap[side]) for side in ("A", "B")}
             for cp, snap in snapshots.items()
         }
-        (out / f"checkpoint_qtables_run{run_id}.json").write_text(
+        checkpoint_file = out / f"checkpoint_qtables_run{run_id}.json"
+        checkpoint_file.write_text(
             json.dumps(checkpoint_payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        checkpoint_sha256[checkpoint_file.name] = hashlib.sha256(checkpoint_file.read_bytes()).hexdigest()
         print(f"Evaluating frozen checkpoint cross-play for run {run_id} ...", flush=True)
         all_raw.extend(evaluate_cross_play(run_id, snapshots, args, config))
     summaries = summarize_cross_play(all_raw)
@@ -904,6 +907,7 @@ def main() -> None:
     except ValueError:
         output_dir_record = str(out.resolve())
     manifest = {
+        "checkpoint_sha256": checkpoint_sha256,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "script": Path(__file__).name, "script_sha256": script_hash,
         "shared_qlearning_core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),

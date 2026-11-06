@@ -81,8 +81,10 @@ function ReplayConfig({ replay, onScenario, preset }: {
     setError('')
     try {
       await onScenario(scenario)
+      dialog.current?.close()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '读取回放失败')
+    } finally {
       setPending(null)
     }
   }

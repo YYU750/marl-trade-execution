@@ -167,6 +167,7 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint-file", type=Path)
+    parser.add_argument("--manifest-file", type=Path, help="Defaults to run_manifest.json next to the checkpoint")
     parser.add_argument("--completion-mode", choices=("autonomous", "none"), default="autonomous")
     parser.add_argument("--checkpoint", type=int, default=500)
     parser.add_argument("--seed", type=int, default=20261105)
@@ -178,12 +179,29 @@ def main() -> None:
         parser.error("--fee-bps must be nonnegative")
     output = DEFAULT_OUT if args.completion_mode == "autonomous" else DEFAULT_OUT.with_name("advanced_self_play_no_completion")
     checkpoint_file = args.checkpoint_file or output / "checkpoint_qtables_run1.json"
-    checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))[str(args.checkpoint)]
+    manifest_file = args.manifest_file or checkpoint_file.with_name("run_manifest.json")
+    try:
+        checkpoint_bytes = checkpoint_file.read_bytes()
+        manifest_bytes = manifest_file.read_bytes()
+        manifest = json.loads(manifest_bytes)
+        checkpoint = json.loads(checkpoint_bytes)[str(args.checkpoint)]
+    except (OSError, ValueError, KeyError) as exc:
+        parser.error(f"cannot load training artifacts ({exc}); see frontend/README.md for training and export commands")
+    checkpoint_digest = sha256(checkpoint_bytes).hexdigest()
+    if manifest.get("checkpoint_sha256", {}).get(checkpoint_file.name) != checkpoint_digest:
+        parser.error("training manifest does not attest to this checkpoint; use matching artifacts from a new training run")
+    provenance = {
+        "checkpoint_file": checkpoint_file.name,
+        "checkpoint_file_sha256": checkpoint_digest,
+        "training_manifest_file": manifest_file.name,
+        "training_manifest_sha256": sha256(manifest_bytes).hexdigest(),
+    }
     if any(checkpoint[name].get("state_encoding") != LimitOrderAwareQLearningAgent.state_encoding for name in AGENTS):
         parser.error("expected a limit-order checkpoint")
     replays = [(name, build_replay(checkpoint, args, name, multiplier)) for name, multiplier in SCENARIOS]
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name, replay in replays:
+        replay["provenance"] = provenance
         path = args.output_dir / f"limit_replay_{name}.json"
         path.write_text(json.dumps(replay, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n",
                         encoding="utf-8")
