@@ -32,7 +32,7 @@ npm run dev
 python .\export_limit_order_replay.py --output-dir ..\frontend\public
 ```
 
-默认读取 `outputs/advanced_self_play_limit_orders/checkpoint_qtables_run1.json`，也可以用 `--checkpoint-file`、`--checkpoint` 和 `--source-ref` 指定来源。导出会检查冻结前后的策略哈希及成本复算。
+默认读取无兜底训练产物 `outputs/advanced_self_play_no_completion/checkpoint_qtables_run1.json`（训练时使用 `--completion-mode none`）。也可以用 `--checkpoint-file`、`--checkpoint` 和 `--source-ref` 指定来源。当前前端回放和导出格式采用无兜底模式，后端默认的期末兜底模式需单独展示兜底成交及其成本。导出会检查冻结前后的策略哈希及成本复算。
 
 可以在 `.env.local` 设置 `VITE_REPLAY_URL` 指向兼容的默认 JSON 地址。浏览器跨域读取时，数据服务需允许对应来源。接口结构变化集中在 `src/replay.ts` 的类型与校验函数中。
 

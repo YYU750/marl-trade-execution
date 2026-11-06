@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export both market scenarios from the same frozen limit-order checkpoint."""
+"""Export both scenarios without the terminal completion backstop (schema 2.0)."""
 from __future__ import annotations
 
 import argparse
@@ -94,7 +94,7 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
     before = {name: policy_hash(agent) for name, agent in policies.items()}
     rows: list[dict] = []
     result = episode(policies["A"], policies["B"], config, args.seed, args.fee_bps,
-                     multiplier, epsilon=0.0, training=False, trace_rows=rows)
+                     multiplier, epsilon=0.0, training=False, trace_rows=rows, completion_mode="none")
     after = {name: policy_hash(agent) for name, agent in policies.items()}
     if before != after or len(rows) != config.horizon * len(AGENTS):
         raise ValueError("Invalid frozen replay")
@@ -136,6 +136,7 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
     return {
         "schema_version": "2.0",
         "demo_type": "frozen_limit_order_replay",
+        "completion_mode": "none",
         "source_ref": args.source_ref,
         "checkpoint_episode": args.checkpoint,
         "seed": args.seed,
@@ -162,7 +163,8 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--checkpoint-file", type=Path, default=DEFAULT_OUT / "checkpoint_qtables_run1.json")
+    parser.add_argument("--checkpoint-file", type=Path,
+                        default=DEFAULT_OUT.with_name("advanced_self_play_no_completion") / "checkpoint_qtables_run1.json")
     parser.add_argument("--checkpoint", type=int, default=500)
     parser.add_argument("--seed", type=int, default=20261105)
     parser.add_argument("--fee-bps", type=float, default=30.0)

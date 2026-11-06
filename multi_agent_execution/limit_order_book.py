@@ -23,7 +23,11 @@ class SyntheticLOBConfig:
     sell_market_events_per_step: float = 1.5
     sell_order_mean_base_slices: float = 0.70
     sell_order_log_sigma: float = 0.55
-    ask_depth_mean_base_slices: tuple[float, ...] = (0.80, 0.55)
+    # Seven visible ask levels have finite synthetic depth. Marketable limit
+    # orders only consume levels allowed by the Agent's selected price limit.
+    ask_depth_mean_base_slices: tuple[float, ...] = (
+        0.80, 0.55, 0.40, 0.30, 0.22, 0.16, 0.12,
+    )
     ask_depth_log_sigma: float = 0.35
 
 
@@ -109,21 +113,50 @@ def quote_for_action(action_index: int, mid: float, half_spread_bps: float,
 
     Action 0 is handled by the caller. Indices 1-3 place passive limits at a
     deep bid, the best bid, or one tick inside the spread. Index 4 submits a
-    marketable limit capped one tick above the best ask; any amount that cannot
-    execute against the two visible ask levels is cancelled (IOC remainder).
+    marketable limit capped one tick above the best ask. Execution is capped
+    by visible ask levels priced within the limit; any unfilled IOC remainder
+    is cancelled.
     """
     tick = mid * tick_bps / 10_000.0
     best_bid = mid * (1.0 - half_spread_bps / 10_000.0)
     best_ask = mid * (1.0 + half_spread_bps / 10_000.0)
     if action_index == 1:
-        return best_bid - tick, False, 2, "passive_deep_limit"
-    if action_index == 2:
-        return best_bid, False, 1, "passive_best_bid_limit"
-    if action_index == 3:
-        return best_bid + tick, False, 0, "passive_inside_spread_limit"
-    if action_index == 4:
-        return best_ask + tick, True, -1, "marketable_limit_ioc"
-    raise ValueError(f"Action index {action_index} does not place a quote")
+        price, tier, order_type = best_bid - tick, 2, "passive_deep_limit"
+    elif action_index == 2:
+        price, tier, order_type = best_bid, 1, "passive_best_bid_limit"
+    elif action_index == 3:
+        price, tier, order_type = best_bid + tick, 0, "passive_inside_spread_limit"
+    elif action_index == 4:
+        price = best_ask + tick
+        return price, True, -1, "marketable_limit_ioc"
+    else:
+        raise ValueError(f"Action index {action_index} does not place a quote")
+
+    return price, False, tier, order_type
+
+
+def terminal_completion_price(mid: float, half_spread_bps: float,
+                              tick_bps: float, forced_qty: float,
+                              base_slice: float,
+                              temporary_impact_bps_per_slice: float,
+                              market_impact_multiplier: float,
+                              step_minutes: float) -> tuple[float, float]:
+    """Price a synthetic market-on-close backstop for any residual parent order.
+
+    The backstop uses a transparent synthetic deep-liquidity curve because the
+    displayed two-level ask book may be smaller than the compulsory residual.
+    Its concession combines square-root tick walking with linear temporary
+    impact. It is an explicit modelling assumption, not a real-exchange fill.
+    Returns (average execution price, impact concession in basis points).
+    """
+    if mid <= 0 or base_slice <= 0 or forced_qty < 0:
+        raise ValueError("mid/base_slice must be positive and forced_qty non-negative")
+    slices = forced_qty / base_slice
+    impact_bps = (tick_bps * math.sqrt(slices)
+                  + temporary_impact_bps_per_slice
+                  * market_impact_multiplier * step_minutes * slices)
+    price = mid * (1.0 + (half_spread_bps + impact_bps) / 10_000.0)
+    return price, impact_bps
 
 
 def queue_ahead_for_new_order(price: float, tier: int, mid: float,

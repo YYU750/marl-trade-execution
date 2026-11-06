@@ -1,0 +1,103 @@
+{
+  "created_utc": "2026-11-06T05:17:33.352820+00:00",
+  "script": "run_advanced_self_play.py",
+  "script_sha256": "e4548594a1c1c2aa16be5dc7c90ab87a2c71fc253073673fa0e64d469891b173",
+  "shared_qlearning_core_sha256": "5cdf1852a089339ed600dfac9e7c169b7e53260288e2d65473f05b45ccc4332e",
+  "schedule_aware_q_sha256": "e84abead4881174b3f605426c47648ae426268c94112b043f2d090a5354e9da1",
+  "limit_order_book_sha256": "7294cc0be41b9af752ed6eb8b6c60bf0ebc34188caa1f14b28d14bfc8c456a6a",
+  "parameters": {
+    "episodes": 100,
+    "training_runs": 1,
+    "eval_seeds": 10,
+    "checkpoint_interval": 50,
+    "fee_bps": 30.0,
+    "seed": 20261106,
+    "output_dir": "outputs/deadline_no_completion_validation"
+  },
+  "config": {
+    "window_minutes": 30,
+    "step_seconds": 30,
+    "order_size": 100000.0,
+    "initial_price": 100.0,
+    "half_spread_bps": 2.0,
+    "volatility_bps": 2.5,
+    "temporary_impact_bps_per_slice": 0.35,
+    "permanent_impact_bps_per_slice": 0.2,
+    "market_impact_multiplier": 1.0,
+    "opponent_impact_multiplier": 1.0,
+    "inventory_risk_weight": 0.0,
+    "terminal_unfilled_penalty_bps": 1000.0,
+    "learning_rate": 0.15,
+    "discount": 0.98,
+    "epsilon_start": 0.35,
+    "epsilon_end": 0.05,
+    "horizon_steps": 60,
+    "training_scenarios": [
+      "normal"
+    ],
+    "evaluation_scenarios": {
+      "normal": 1.0,
+      "high_volatility": 2.0
+    }
+  },
+  "method": {
+    "research_route": "Route A: simultaneous two-sided Independent Q-learning; rule-guided Double Q against fixed opponents is a separately reported Route B extension",
+    "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+    "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+    "state_encoding": "schedule_aware_limit_order_v2",
+    "reward_alignment": "implementation shortfall on actual fills; terminal unfilled-order penalty applies only in none mode; no extra inventory-risk shaping",
+    "untried_action_bootstrap": "only tried actions are included; C deadline catch-up quantity is an execution overlay, not a Q action bootstrap floor",
+    "simultaneous_action_and_update": true,
+    "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",
+    "submission_vs_execution": "submitted child quantity is not treated as filled; parent inventory falls only by matched execution quantity",
+    "completion_mode": "none",
+    "completion_constraint": "none; actual completion rate is an outcome and terminal unfilled shares incur opportunity cost plus penalty",
+    "deadline_urgency_policy": {
+      "enabled": false,
+      "behind_schedule_action_floors": {
+        "70_percent": 3,
+        "85_percent": 4,
+        "95_percent": 4
+      },
+      "quote_escalation_ticks": {
+        "70_percent": 1,
+        "85_percent": 2,
+        "95_percent": 5
+      },
+      "terminal_backstop_price": "half-spread + tick_bps*sqrt(forced_qty/base_slice) + temporary_impact_bps_per_slice*market_impact_multiplier*step_minutes*(forced_qty/base_slice)"
+    },
+    "limit_order_parameters": {
+      "tick_bps": 1.0,
+      "quote_ttl_steps": 4,
+      "passive_queue_mean_base_slices": [
+        0.12,
+        0.65,
+        1.1
+      ],
+      "sell_market_events_per_step": 1.5,
+      "sell_order_mean_base_slices": 0.7,
+      "sell_order_log_sigma": 0.55,
+      "ask_depth_mean_base_slices": [
+        0.8,
+        0.55,
+        0.4,
+        0.3,
+        0.22,
+        0.16,
+        0.12
+      ],
+      "ask_depth_log_sigma": 0.35
+    },
+    "fee_economic_interpretation": "30 bp one-way = 0.3% of traded notional",
+    "checkpoint_evaluation": "frozen cross-play on paired seeds",
+    "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",
+    "claim_boundary": "candidate-set responses are not global optima or Nash equilibria"
+  },
+  "counts": {
+    "training_episode_rows": 100,
+    "cross_play_rows": 180,
+    "cross_play_summary_rows": 18,
+    "checkpoint_count_per_run": 3
+  },
+  "elapsed_seconds": 0.716
+}
