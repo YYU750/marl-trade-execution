@@ -46,12 +46,16 @@ function Chart({ option, label, onStep }: {
   useEffect(() => {
     const instance = chart.current
     if (!instance || !onStep) return
-    const click = ({ dataIndex, componentType }: { dataIndex: number; componentType: string }) => {
-      if (componentType === 'series' && Number.isInteger(dataIndex)) onStep(dataIndex)
+    const renderer = instance.getZr()
+    const click = ({ offsetX, offsetY }: { offsetX: number; offsetY: number }) => {
+      const point = [offsetX, offsetY]
+      if (!instance.containPixel({ gridIndex: 0 }, point)) return
+      const coordinate = instance.convertFromPixel({ gridIndex: 0 }, point)
+      if (Array.isArray(coordinate) && Number.isFinite(coordinate[0])) onStep(Math.round(coordinate[0]))
     }
-    instance.on('click', click)
+    renderer.on('click', click)
     return () => {
-      if (!instance.isDisposed()) instance.off('click', click)
+      if (!instance.isDisposed()) renderer.off('click', click)
     }
   }, [onStep])
   return <div ref={container} className={styles.chart} role="img" aria-label={label} />

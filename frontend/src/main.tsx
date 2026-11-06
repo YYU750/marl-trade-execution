@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ActionChart, CumulativeCostChart, ImpactChart, PriceChart } from './Charts'
 import { decisionReason, OrderEvents, StepExplanation } from './StepExplanation'
@@ -157,6 +157,7 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
   const [page, setPage] = useState<Page>('overview')
   const [agent, setAgent] = useState<Agent>('A')
   const [marketChart, setMarketChart] = useState<'impact' | 'cost'>('impact')
+  const [costRange, setCostRange] = useState<'step' | 'cumulative'>('step')
   const [current, setCurrent] = useState(() => {
     if (replay.schema_version === '1.0') return Math.min(17, replay.steps.length - 1)
     const partial = replay.steps.findIndex(step => agents.some(id => {
@@ -175,6 +176,12 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
   const limit = replay.schema_version === '2.0'
   const orderSize = replay.config.order_size_per_agent_shares
   const totalCosts = useMemo(() => agents.map(id => aggregateCosts(replay, id)), [replay])
+  const cumulative = costRange === 'cumulative'
+  const displayedCosts = agents.map(id => cumulative ? aggregateCosts(replay, id, current + 1)
+    : row.agents[id].execution.cost_components_bps_of_parent_order)
+  const displayedTotals = displayedCosts.map((costs, index) => cumulative
+    ? Object.values(costs).reduce((total, part) => total + part, 0)
+    : row.agents[agents[index]].execution.weighted_step_shortfall_bps) as [number, number]
   const [aCosts, bCosts] = totalCosts
   const totals: [number, number] = [replay.summary.A_cost_bps, replay.summary.B_cost_bps]
   const reconciles = agents.every((id, index) => {
@@ -182,19 +189,37 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
     const residual = replay.summary.cost_reconciliation[id].residual_opportunity_cost_bps
     return Math.abs(sum + residual - totals[index]) < 1e-6
   })
-  const selectStep = (index: number) => {
+  const selectStep = useCallback((index: number) => {
     setPlaying(false)
     setCurrent(Math.min(length - 1, Math.max(0, index)))
-  }
+  }, [length])
   const changePage = (target: Page) => {
     setPage(target)
     window.scrollTo(0, 0)
   }
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     if (playing) { setPlaying(false); return }
     if (current === length - 1) setCurrent(0)
     setPlaying(true)
-  }
+  }, [current, length, playing])
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey ||
+        document.querySelector('dialog[open]')) return
+      const target = event.target
+      if (target instanceof Element && (target.closest('input, select, textarea, [contenteditable="true"]') ||
+        (event.key === ' ' && target.closest('button, a[href]')))) return
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        selectStep(current + (event.key === 'ArrowRight' ? 1 : -1))
+      } else if (event.key === ' ') {
+        event.preventDefault()
+        if (!event.repeat && length > 1) togglePlay()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [current, length, selectStep, togglePlay])
   useEffect(() => {
     if (!playing) return
     if (current === length - 1) { setPlaying(false); return }
@@ -376,11 +401,16 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
             </>}
           </section>
           <section className={styles.glass}>
-            <Heading icon="layers">当步成本</Heading>
-            <CostTable limit={limit} a={row.agents.A.execution.cost_components_bps_of_parent_order}
-              b={row.agents.B.execution.cost_components_bps_of_parent_order}
-              totals={agents.map(id => row.agents[id].execution.weighted_step_shortfall_bps) as [number, number]} />
-            <p className={styles.hint}>以母单名义金额归一化。单边手续费 {bp(market.one_way_fee_bps, 2)}。</p>
+            <div className={styles.panelHead}>
+              <Heading icon="layers">执行成本拆分</Heading>
+              <div className={styles.segmented} aria-label="成本统计范围">
+                <button aria-pressed={!cumulative} onClick={() => setCostRange('step')}>当步</button>
+                <button aria-pressed={cumulative} onClick={() => setCostRange('cumulative')}>累计至当前步</button>
+              </div>
+            </div>
+            <CostTable limit={limit} a={displayedCosts[0]} b={displayedCosts[1]} totals={displayedTotals} />
+            <p className={styles.hint}>{cumulative ? `第 1–${row.step} 步已成交成本。期末机会成本见回合总结。`
+              : `以母单名义金额归一化。单边手续费 ${bp(market.one_way_fee_bps, 2)}。`}</p>
           </section>
         </div>
         <section className={styles.glass}>

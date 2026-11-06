@@ -232,10 +232,10 @@ export const scenarioLabel = (scenario: string) =>
 export const fillQuantity = (entry: AgentStep) =>
   entry.execution.actual_filled_quantity_shares ?? entry.decision.selected_quantity_shares
 
-export function aggregateCosts(replay: Replay, id: Agent): Costs {
+export function aggregateCosts(replay: Replay, id: Agent, stepCount = replay.steps.length): Costs {
   const totals: Costs = {}
   const keys = costComponents(replay.schema_version === '2.0')
-  for (const step of replay.steps) {
+  for (const step of replay.steps.slice(0, stepCount)) {
     const costs = step.agents[id].execution.cost_components_bps_of_parent_order
     for (const component of keys) totals[component] = (totals[component] ?? 0) + (costs[component] ?? 0)
   }
