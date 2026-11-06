@@ -21,17 +21,24 @@ python .\run_advanced_self_play.py
 训练 Agent 自主选择方案 C 的介入时机和措施：
 
 ```powershell
-python .\run_experiment.py --deadline-c-mode learned --output-dir .\outputs\advanced_self_play_autonomous_learned_c
+python .\run_experiment.py --episodes 1000 --training-runs 5 --eval-seeds 30 `
+  --checkpoint-interval 1000 --deadline-c-mode learned `
+  --output-dir .\outputs\advanced_self_play_learned_c_flexible_quantity_1000x5x30
 ```
 
-学习型 C 使用独立 Q 决策头。在每个 30 秒决策步，只要剩余库存超过包括当前步在内的线性计划余额，Agent 就能选择不加急、IOC+1 tick、IOC+3 ticks 或 IOC+6 ticks。42、51、57 步对应的 20 分 30 秒、25 分钟和 28 分钟只是分析参照，不是硬触发点。状态包含准确时间、进度缺口、价格偏离、自身当前挂单及对手上一步成交；C 决策头和订单动作头共用本步已实现的学习奖励，但分别更新 Q 表。
+学习型 C 使用独立 Q 决策头。在每个 30 秒决策步，只要剩余库存超过包括当前步在内的线性计划余额，Agent 就能选择不加急，或联合选择 IOC 报价上移 1/3/6 tick、额外追赶当前进度缺口的 0/25/50/100%。42、51、57 步只是分析参照，不是硬触发点。状态包含准确时间、进度缺口、价格偏离、自身当前挂单及对手上一步成交；C 决策头和订单动作头共用本步已实现的学习奖励，但分别更新 Q 表。额外数量仍只是提交量，最终成交由限价、可见盘口和队列决定。
 
 完整机制、决策公式、状态和行动的含义及逐步运行例子见[学习型方案 C 机制详解](./学习型方案C机制详解.md)。
+
+学习型 C 的可变追赶量、动态规则和固定 TWAP 对照结果见[最新配对比较报告](./outputs/learned_c_flexible_quantity_comparison/findings.md)。
 
 有了学习型检查点后，可在同一冻结 A/B 检查点和配对随机种子下比较纯 Agent、确定性 C、随机 C 和学习型 C：
 
 ```powershell
-python .\compare_deadline_c_overlay.py --checkpoint-dir .\outputs\advanced_self_play_autonomous_learned_c --output-dir .\outputs\c_overlay_comparison_with_learned_c
+python .\compare_deadline_c_overlay.py `
+  --checkpoint-dir .\outputs\advanced_self_play_learned_c_flexible_quantity_1000x5x30 `
+  --checkpoint 1000 `
+  --output-dir .\outputs\c_overlay_flexible_quantity_comparison
 ```
 
 历史随机 C 实验仍可复现：
@@ -63,7 +70,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 试跑可确认代码、数据保存和统计链路可运行；小样本不能用来推断策略优劣或收敛。
 
-学习型 C 的机制和结果见[方案 C 学习型决策头说明](./方案C学习型决策头说明.md)。历史随机 C 结果见[方案 C 随机介入与训练评估](./方案C兜底量配对评估.md)。
+当前可变加急量 C 的机制见[学习型方案 C 机制详解](./学习型方案C机制详解.md)，与动态规则和固定 TWAP 的最新配对结果见[对照报告](./outputs/learned_c_flexible_quantity_comparison/findings.md)。四动作 C 决策头说明及其 500 回合结果见[历史版本说明](./方案C学习型决策头说明.md)。历史随机 C 结果见[方案 C 随机介入与训练评估](./方案C兜底量配对评估.md)。
 
 ## 智能体和环境
 

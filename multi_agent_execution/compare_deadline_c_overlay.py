@@ -19,8 +19,8 @@ from schedule_aware_q import LimitOrderAwareQLearningAgent
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_CHECKPOINT_DIR = ROOT / "outputs" / "advanced_self_play_autonomous_learned_c"
-DEFAULT_OUTPUT_DIR = ROOT / "outputs" / "c_overlay_comparison_with_learned_c"
+DEFAULT_CHECKPOINT_DIR = ROOT / "outputs" / "advanced_self_play_learned_c_flexible_quantity_1000x5x30"
+DEFAULT_OUTPUT_DIR = ROOT / "outputs" / "c_overlay_flexible_quantity_comparison"
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
         description="Compare frozen learned-Q policies with pure Q, rule C, random C, and learned C."
     )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
-    parser.add_argument("--checkpoint", type=int, default=500)
+    parser.add_argument("--checkpoint", type=int, default=1000)
     parser.add_argument("--training-runs", type=int, default=5)
     parser.add_argument("--eval-seeds", type=int, default=30)
     parser.add_argument("--seed", type=int, default=20261107)
@@ -178,8 +178,20 @@ def summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[di
                 action_counts: Counter[str] = Counter()
                 for row in group:
                     action_counts.update(json.loads(row[f"{side}_c_actions"]))
-                for label in ("no_c", "ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks"):
-                    summary[f"{side}_{label}_per_episode"] = action_counts[label] / len(group)
+                summary[f"{side}_no_c_per_episode"] = action_counts["no_c"] / len(group)
+                for tick_label, old_label in (("ioc_plus_1_tick", "ioc_plus_1_tick"),
+                                              ("ioc_plus_3_tick", "ioc_plus_3_ticks"),
+                                              ("ioc_plus_6_tick", "ioc_plus_6_ticks")):
+                    total = sum(count for label, count in action_counts.items()
+                                if label == old_label or label.startswith(tick_label + "_"))
+                    summary[f"{side}_{tick_label}_per_episode"] = total / len(group)
+                for fraction_label in ("0pct", "25pct", "50pct", "100pct"):
+                    total = sum(count for label, count in action_counts.items()
+                                if f"catchup_{fraction_label}" in label)
+                    if fraction_label == "0pct":
+                        total += sum(count for label, count in action_counts.items()
+                                     if label in {"ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks"})
+                    summary[f"{side}_catchup_{fraction_label}_per_episode"] = total / len(group)
             summaries.append(summary)
         # Pair each C variant against the identical pure-agent seed.
         for run_id in sorted({r["training_run"] for r in rows}):
@@ -214,7 +226,7 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         f"- 每个场景：{args.training_runs} 个训练运行 × {args.eval_seeds} 个配对随机种子；单边手续费 {args.fee_bps:g} bp。",
         "- 比较对象：同一组冻结 A/B 检查点、同一市场随机种子下的纯 Agent、确定性 C、随机 C 和学习型 C；所有方式均保留第 60 步环境兜底。",
         "- 确定性 C 保留旧版 70%、85%、95% 截止加急逻辑。随机 C 从落后进度时即可低概率介入，离截止越近且缺口越大，介入概率越高；每次介入再随机抽取动作下限、报价加价档和追赶数量比例，前段偏被动、后段逐步提高成交确定性。",
-        "- 学习型 C 检查点必须包含已训练的独立 C-Q 表。本脚本属于冻结策略的评估期对照；Q 表和 C-Q 表均不更新。", "",
+              "- 学习型 C 检查点必须包含已训练的独立 C-Q 表。本脚本属于冻结策略的评估期对照；Q 表和 C-Q 表均不更新。新版本 C-Q 联合选择 IOC 报价加价档和追赶量档（目标增量的 0%、25%、50%、100%）。", "",
         "## 平均结果", "",
         "兜底量越低表示普通限价撮合中的自主成交越多；经济成本包含实际成交、手续费及冲击，不含学习惩罚。", "",
         "| 场景 | 执行方式 | A 兜底股数 | B 兜底股数 | A 成本 (bp) | B 成本 (bp) | 完成率 A/B | A/B 落后进度步数 | A/B 动作上调步数 | A/B C介入步数 |",
@@ -245,15 +257,17 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
             )
     learned = [r for r in summaries if r["execution_overlay"] == "learned_c"]
     lines += ["", "## 学习型 C 的动作选择频数", "",
-              "下表为每个 60 步评估回合的平均决策次数。只统计当前库存落后线性剩余时间计划时开放的决策；按时状态记作 on-schedule，不计入下表。", "",
-              "| 场景 | Agent | no-C | IOC+1 tick | IOC+3 ticks | IOC+6 ticks |", "|---|---|---:|---:|---:|---:|"]
+              "下表为每个 60 步评估回合的平均决策次数。只统计当前库存落后线性剩余时间计划时开放的决策；按时状态记作 on-schedule，不计入下表。报价档按 IOC 加价档汇总，数量档统计各档的联合动作次数。", "",
+              "| 场景 | Agent | no-C | IOC+1 | IOC+3 | IOC+6 | 追赶0% | 追赶25% | 追赶50% | 追赶100% |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for row in learned:
         for side in ("A", "B"):
-            counts = [row[f"{side}_{label}_per_episode"] for label in
-                      ("no_c", "ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks")]
+            counts = [row[f"{side}_no_c_per_episode"]]
+            counts.extend(row[f"{side}_ioc_plus_{ticks}_tick_per_episode"] for ticks in (1, 3, 6))
+            counts.extend(row[f"{side}_catchup_{fraction}_per_episode"]
+                          for fraction in ("0pct", "25pct", "50pct", "100pct"))
             lines.append(f"| {row['scenario']} | {side} | " + " | ".join(f"{v:.1f}" for v in counts) + " |")
     lines += ["", "## 解释边界", "",
-              "本试验冻结相同 A/B 检查点，比较纯 Agent、确定性 C、随机 C 与已训练的 C 决策头。随机 C 按进度阶段和缺口概率抽样；学习型 C 在任意决策步检测到进度落后时，由冻结的 C-Q 策略从 no-C、IOC+1、IOC+3、IOC+6 中择一。42、51、57 步（约 20 分 30 秒、25 分钟、28 分钟）只是解释策略的参考节点，不是触发门槛。评估不更新任何 Q 表。所有结果来自合成订单簿；100% 完成仍由终端兜底保证。", "",
+              "本试验冻结相同 A/B 检查点，比较纯 Agent、确定性 C、随机 C 与已训练的 C 决策头。随机 C 按进度阶段和缺口概率抽样；新版本学习型 C 在任意落后决策步中，从 12 种 IOC 报价/数量组合及 no-C 中选择；数量为普通 IOC 子单以上、向当前所需平均片量靠拢的 0%、25%、50% 或 100%。42、51、57 步只是参考节点，不是触发门槛。评估不更新任何 Q 表。所有结果来自合成订单簿；100% 完成仍由终端兜底保证。", "",
               f"- 冻结策略来源：`{args.checkpoint_dir}`。",
               f"- 原始配对结果：`c_overlay_raw.csv`；配对差异：`c_overlay_paired_differences.csv`；汇总：`c_overlay_summary.csv`。"]
     return "\n".join(lines) + "\n"

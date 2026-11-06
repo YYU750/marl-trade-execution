@@ -337,18 +337,39 @@ class LimitOrderAwareQLearningAgent(ScheduleAwareQLearningAgent):
         return max(self.q.get(self.state_key(initial), [0.0] * len(ACTIONS)))
 
 
+SCHEME_C_QUOTE_LEVELS = (1, 3, 6)
+SCHEME_C_CATCH_UP_FRACTIONS = (0.0, 0.25, 0.50, 1.0)
+SCHEME_C_ACTION_SPECS = ((0, 0.0),) + tuple(
+    (ticks, fraction)
+    for ticks in SCHEME_C_QUOTE_LEVELS
+    for fraction in SCHEME_C_CATCH_UP_FRACTIONS
+)
+SCHEME_C_ACTION_NAMES = ("no_c",) + tuple(
+    f"ioc_plus_{ticks}_tick_catchup_{int(fraction * 100)}pct"
+    for ticks in SCHEME_C_QUOTE_LEVELS
+    for fraction in SCHEME_C_CATCH_UP_FRACTIONS
+)
+
+
 class SchemeCDecisionPolicy:
-    """Learn when and how strongly to use the three Scheme C protections.
+    """Learn the urgency quote and catch-up quantity jointly for Scheme C.
 
     This is a separate Q head from the five ordinary order-placement actions.
     Whenever the order is behind its remaining-time schedule, it can choose
-    no intervention or any of the three C urgency measures. Exact decision
-    time is part of the state, so the policy learns when to begin escalating.
+    no intervention, or one of three IOC quote offsets crossed with four
+    catch-up fractions. The quantity fraction interpolates from the ordinary
+    Q-selected child size toward the current average quantity needed to finish.
+    Exact decision time is part of the state, so the policy learns when and
+    how much to accelerate.
     """
 
-    action_names = ("no_c", "ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks")
-    quote_ticks = {1: 1, 2: 3, 3: 6}
-    state_encoding = "scheme_c_meta_exact_time_v1"
+    action_specs = SCHEME_C_ACTION_SPECS
+    action_names = SCHEME_C_ACTION_NAMES
+    quote_ticks = {index: ticks for index, (ticks, _) in enumerate(action_specs)}
+    catch_up_fractions = {
+        index: fraction for index, (_, fraction) in enumerate(action_specs)
+    }
+    state_encoding = "scheme_c_meta_exact_time_quantity_v2"
 
     def __init__(self, config: Config):
         self.config = config
@@ -379,8 +400,8 @@ class SchemeCDecisionPolicy:
             reference_stage = "reference_steps_57_60"
         # The windows shown in the original C design are reference nodes, not
         # hard-coded triggers. Once behind schedule, the learned policy may
-        # wait or select any of the three measures; it learns timing from t.
-        return reference_stage, [0, 1, 2, 3], True
+        # wait or choose any quote/quantity combination at any decision step.
+        return reference_stage, list(range(len(self.action_names))), True
 
     def state_key(self, obs: Observation) -> tuple[int, ...]:
         steps_left = max(obs.horizon - obs.t, 1)
