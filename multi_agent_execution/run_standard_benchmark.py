@@ -47,6 +47,9 @@ class Config:
     market_impact_multiplier: float = 1.0
     opponent_impact_multiplier: float = 1.0
     inventory_risk_weight: float = 0.025
+    # Used by the event-driven self-play model: penalize falling behind an
+    # even completion schedule while keeping every intraday action learned.
+    schedule_deficit_penalty_bps: float = 10.0
     terminal_unfilled_penalty_bps: float = 1_000.0
     learning_rate: float = 0.15
     discount: float = 0.98

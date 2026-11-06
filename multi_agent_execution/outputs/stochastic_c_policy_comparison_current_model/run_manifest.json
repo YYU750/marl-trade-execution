@@ -1,0 +1,142 @@
+{
+  "checkpoint_dir": "C:\\Users\\kuku\\Desktop\\研一上资料合集\\金融人工智能\\金融人工智能\\期末大作业\\multi_agent_execution\\outputs\\penalty_comparison_shaped_500x5x30",
+  "checkpoint_episode": 500,
+  "training_runs": 5,
+  "eval_seeds_per_scenario": 30,
+  "base_seed": 20261107,
+  "fee_bps": 30.0,
+  "schedule_deficit_penalty_bps": 10.0,
+  "terminal_unfilled_penalty_bps": 1000.0,
+  "scenarios": {
+    "normal": 1.0,
+    "high_volatility": 2.0
+  },
+  "limit_order_parameters": {
+    "tick_bps": 1.0,
+    "quote_ttl_steps": 4
+  },
+  "deadline_c_policy": {
+    "activation": "randomized when behind linear schedule; probability increases with deficit and deadline stage",
+    "early_window": {
+      "base_probability": 0.12,
+      "action_floors": [
+        1,
+        2,
+        3
+      ],
+      "ticks": [
+        0,
+        1
+      ],
+      "catch_up_fraction": [
+        0.1,
+        0.3
+      ]
+    },
+    "urgency_window": {
+      "base_probability": 0.32,
+      "action_floors": [
+        2,
+        3,
+        4
+      ],
+      "ticks": [
+        0,
+        1,
+        2
+      ],
+      "catch_up_fraction": [
+        0.25,
+        0.55
+      ]
+    },
+    "high_urgency_window": {
+      "base_probability": 0.6,
+      "action_floors": [
+        3,
+        4
+      ],
+      "ticks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "catch_up_fraction": [
+        0.4,
+        0.8
+      ]
+    },
+    "final_sweep_window": {
+      "base_probability": 0.88,
+      "action_floors": [
+        3,
+        4
+      ],
+      "ticks": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "catch_up_fraction": [
+        0.7,
+        1.0
+      ]
+    },
+    "deficit_probability_increment_per_base_slice": 0.03,
+    "deficit_increment_cap": 0.2,
+    "probability_cap": 0.98,
+    "action_floor_distributions": {
+      "early_window": {
+        "1": 0.1,
+        "2": 0.55,
+        "3": 0.35
+      },
+      "urgency_window": {
+        "2": 0.12,
+        "3": 0.55,
+        "4": 0.33
+      },
+      "high_urgency_window": {
+        "3": 0.38,
+        "4": 0.62
+      },
+      "final_sweep_window": {
+        "3": 0.1,
+        "4": 0.9
+      }
+    },
+    "quote_tick_distributions": {
+      "early_window": {
+        "0": 0.85,
+        "1": 0.15
+      },
+      "urgency_window": {
+        "0": 0.62,
+        "1": 0.3,
+        "2": 0.08
+      },
+      "high_urgency_window": {
+        "0": 0.52,
+        "1": 0.28,
+        "2": 0.15,
+        "3": 0.05
+      },
+      "final_sweep_window": {
+        "0": 0.24,
+        "1": 0.22,
+        "2": 0.18,
+        "3": 0.14,
+        "4": 0.1,
+        "5": 0.07,
+        "6": 0.05
+      }
+    },
+    "training_action_overrides": false
+  },
+  "comparison": "same frozen Q checkpoints and paired seeds; pure Q vs deterministic C vs randomized C evaluation overlays"
+}

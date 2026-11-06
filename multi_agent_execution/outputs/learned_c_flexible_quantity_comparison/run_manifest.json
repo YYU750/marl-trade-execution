@@ -1,0 +1,65 @@
+{
+  "checkpoint_dir": "C:\\Users\\kuku\\Desktop\\研一上资料合集\\金融人工智能\\金融人工智能\\期末大作业\\multi_agent_execution\\outputs\\advanced_self_play_learned_c_flexible_quantity_1000x5x30",
+  "checkpoint_episode": 1000,
+  "training_runs": 5,
+  "eval_seeds_per_scenario": 30,
+  "base_seed": 20261107,
+  "fee_bps": 30.0,
+  "config": {
+    "window_minutes": 30,
+    "step_seconds": 30,
+    "order_size": 100000.0,
+    "initial_price": 100.0,
+    "half_spread_bps": 2.0,
+    "volatility_bps": 2.5,
+    "temporary_impact_bps_per_slice": 0.35,
+    "permanent_impact_bps_per_slice": 0.2,
+    "market_impact_multiplier": 1.0,
+    "opponent_impact_multiplier": 1.0,
+    "inventory_risk_weight": 0.0,
+    "schedule_deficit_penalty_bps": 10.0,
+    "terminal_unfilled_penalty_bps": 1000.0,
+    "learning_rate": 0.15,
+    "discount": 0.98,
+    "epsilon_start": 0.35,
+    "epsilon_end": 0.05,
+    "horizon_steps": 60
+  },
+  "market_scenarios": {
+    "normal": 1.0,
+    "high_volatility": 2.0
+  },
+  "limit_order_parameters": {
+    "tick_bps": 1.0,
+    "quote_ttl_steps": 4,
+    "passive_queue_mean_base_slices": [
+      0.12,
+      0.65,
+      1.1
+    ],
+    "sell_market_events_per_step": 1.5,
+    "sell_order_mean_base_slices": 0.7,
+    "sell_order_log_sigma": 0.55,
+    "ask_depth_mean_base_slices": [
+      0.8,
+      0.55,
+      0.4,
+      0.3,
+      0.22,
+      0.16,
+      0.12
+    ],
+    "ask_depth_log_sigma": 0.35
+  },
+  "methods": {
+    "learned_c": "frozen Q + learned Scheme C, evaluated as A",
+    "dynamic_rule": "G1 thresholds on current LOB actions; no feasibility floor",
+    "fixed_twap": "one base-slice marketable-limit IOC per 30-second step; cap spans seven modeled ask levels"
+  },
+  "opponents": [
+    "dynamic_rule",
+    "fixed_twap"
+  ],
+  "completion_mode": "autonomous; common terminal backstop, report forced shares separately",
+  "paired_seeds": "same exogenous seed across every A method and both fixed B opponents within each run/scenario/eval index"
+}

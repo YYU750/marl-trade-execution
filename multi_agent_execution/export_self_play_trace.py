@@ -22,7 +22,11 @@ def parse_args() -> argparse.Namespace:
                         help="saved training checkpoint episode")
     parser.add_argument("--seed", type=int, default=20261103)
     parser.add_argument("--fee-bps", type=float, default=30.0)
+    parser.add_argument("--schedule-deficit-penalty-bps", type=float, default=10.0)
+    parser.add_argument("--terminal-unfilled-penalty-bps", type=float, default=1_000.0)
     parser.add_argument("--scenario", choices=[name for name, _ in SCENARIOS], default="normal")
+    parser.add_argument("--deadline-c-mode", choices=("none", "learned"), default="none",
+                        help="use the checkpoint's learned Scheme C head in the illustrative trace")
     parser.add_argument("--output", type=Path,
                         default=DEFAULT_OUT / "sample_simultaneous_learning_trace.csv")
     return parser.parse_args()
@@ -45,6 +49,18 @@ def agent_from_payload(config: Config, payload: dict[str, Any]) -> LimitOrderAwa
         tuple(int(value) for value in state.split("|")): [int(count) for count in counts]
         for state, counts in payload["action_visits"].items()
     }
+    c_policy = payload.get("scheme_c_policy")
+    if c_policy is not None:
+        if c_policy.get("state_encoding") != agent.scheme_c.state_encoding:
+            raise ValueError("Checkpoint Scheme C state encoding does not match this code")
+        agent.scheme_c.q = {
+            tuple(int(value) for value in state.split("|")): [float(q) for q in values]
+            for state, values in c_policy.get("q", {}).items()
+        }
+        agent.scheme_c.action_visits = {
+            tuple(int(value) for value in state.split("|")): [int(count) for count in counts]
+            for state, counts in c_policy.get("action_visits", {}).items()
+        }
     return agent
 
 
@@ -52,6 +68,8 @@ def main() -> None:
     args = parse_args()
     if args.fee_bps < 0:
         raise SystemExit("--fee-bps cannot be negative")
+    if args.schedule_deficit_penalty_bps < 0 or args.terminal_unfilled_penalty_bps < 0:
+        raise SystemExit("completion penalty coefficients cannot be negative")
     if not args.checkpoint_file.is_file():
         raise SystemExit(
             f"Checkpoint file not found: {args.checkpoint_file}. Run run_experiment.py first."
@@ -62,8 +80,14 @@ def main() -> None:
     if checkpoint_key not in all_checkpoints:
         raise SystemExit(f"Checkpoint {args.checkpoint} is absent from {args.checkpoint_file}")
 
-    config = Config(inventory_risk_weight=0.0)
+    config = Config(
+        inventory_risk_weight=0.0,
+        schedule_deficit_penalty_bps=args.schedule_deficit_penalty_bps,
+        terminal_unfilled_penalty_bps=args.terminal_unfilled_penalty_bps,
+    )
     checkpoint = all_checkpoints[checkpoint_key]
+    if args.deadline_c_mode == "learned" and not checkpoint["A"].get("scheme_c_policy"):
+        raise SystemExit("The selected checkpoint does not contain a trained Scheme C Q head")
     agent_a = agent_from_payload(config, checkpoint["A"])
     agent_b = agent_from_payload(config, checkpoint["B"])
     volatility_multiplier = dict(SCENARIOS)[args.scenario]
@@ -71,6 +95,7 @@ def main() -> None:
     episode_result = episode(
         agent_a, agent_b, config, args.seed, args.fee_bps, volatility_multiplier,
         epsilon=0.0, training=True, trace_rows=trace_rows,
+        deadline_c_mode=args.deadline_c_mode,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +114,8 @@ def main() -> None:
         "seed": args.seed,
         "scenario": args.scenario,
         "fee_bps_one_way": args.fee_bps,
+        "schedule_deficit_penalty_coefficient_bps": args.schedule_deficit_penalty_bps,
+        "terminal_residual_penalty_coefficient_bps": args.terminal_unfilled_penalty_bps,
         "window_minutes": config.window_minutes,
         "step_seconds": config.step_seconds,
         "steps": config.horizon,
@@ -102,8 +129,15 @@ def main() -> None:
         "A_unfilled_shares": episode_result["unfilled_A"],
         "B_unfilled_shares": episode_result["unfilled_B"],
         "completion_mode": "autonomous",
+        "deadline_c_mode": args.deadline_c_mode,
+        "A_deadline_c_action_counts": episode_result["deadline_c_actions_A"],
+        "B_deadline_c_action_counts": episode_result["deadline_c_actions_B"],
         "A_forced_completion_shares": episode_result["forced_completion_A"],
         "B_forced_completion_shares": episode_result["forced_completion_B"],
+        "A_schedule_deficit_penalty_bps": episode_result["schedule_deficit_penalty_A_bps"],
+        "B_schedule_deficit_penalty_bps": episode_result["schedule_deficit_penalty_B_bps"],
+        "A_terminal_residual_penalty_bps": episode_result["terminal_residual_penalty_A_bps"],
+        "B_terminal_residual_penalty_bps": episode_result["terminal_residual_penalty_B_bps"],
         "A_forced_completion_cost_contribution_bps": episode_result[
             "forced_completion_cost_contribution_A_bps"
         ],

@@ -108,15 +108,18 @@ def make_market_tape(seed: int, horizon: int, base_slice: float,
 
 
 def quote_for_action(action_index: int, mid: float, half_spread_bps: float,
-                     tick_bps: float) -> tuple[float, bool, int, str]:
+                     tick_bps: float,
+                     urgency_ticks: int = 0) -> tuple[float, bool, int, str]:
     """Map the five Q actions to hold/wait, passive quotes, or a capped IOC.
 
     Action 0 is handled by the caller. Indices 1-3 place passive limits at a
     deep bid, the best bid, or one tick inside the spread. Index 4 submits a
-    marketable limit capped one tick above the best ask. Execution is capped
-    by visible ask levels priced within the limit; any unfilled IOC remainder
-    is cancelled.
+    marketable limit capped one tick above the best ask. The optional C-policy
+    urgency offset raises the limit in late catch-up windows. Execution is
+    still capped by visible ask levels priced within the limit; any unfilled
+    IOC remainder is cancelled.
     """
+    urgency_ticks = max(0, int(urgency_ticks))
     tick = mid * tick_bps / 10_000.0
     best_bid = mid * (1.0 - half_spread_bps / 10_000.0)
     best_ask = mid * (1.0 + half_spread_bps / 10_000.0)
@@ -127,12 +130,48 @@ def quote_for_action(action_index: int, mid: float, half_spread_bps: float,
     elif action_index == 3:
         price, tier, order_type = best_bid + tick, 0, "passive_inside_spread_limit"
     elif action_index == 4:
-        price = best_ask + tick
+        price = best_ask + (1 + urgency_ticks) * tick
         return price, True, -1, "marketable_limit_ioc"
     else:
         raise ValueError(f"Action index {action_index} does not place a quote")
 
+    price += urgency_ticks * tick
+    if price >= best_ask - 1e-10:
+        return price, True, -1, "deadline_marketable_limit_ioc"
+    if price >= best_bid + tick - 1e-10:
+        tier = 0
+    elif price >= best_bid - 1e-10:
+        tier = 1
+    else:
+        tier = 2
     return price, False, tier, order_type
+
+
+def deadline_urgency(step: int, horizon: int, remaining: float,
+                     order_size: float) -> tuple[int, int, str]:
+    """Return the historical Scheme C action floor, quote escalation and stage.
+
+    The overlay acts only when remaining inventory exceeds a linear completion
+    schedule. It leaves early decisions to the Q policy, then raises the action
+    floor to the capped IOC and progressively widens its limit at 70%, 85%, and
+    95% of the execution window.
+    """
+    if horizon <= 0 or order_size <= 0:
+        raise ValueError("horizon and order_size must be positive")
+    steps_after_this = max(0, horizon - step - 1)
+    schedule_remaining = order_size * steps_after_this / horizon
+    behind_schedule = remaining > schedule_remaining + max(1e-9, order_size * 1e-12)
+    if not behind_schedule:
+        return 0, 0, "on_schedule"
+
+    progress = (step + 1) / horizon
+    if progress >= 0.95:
+        return 4, 6, "final_sweep_window"
+    if progress >= 0.85:
+        return 4, 3, "high_urgency_window"
+    if progress >= 0.70:
+        return 4, 1, "urgency_window"
+    return 0, 0, "early_autonomous_window"
 
 
 def terminal_completion_price(mid: float, half_spread_bps: float,
