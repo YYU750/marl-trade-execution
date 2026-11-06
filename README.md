@@ -15,6 +15,8 @@ python .\run_experiment.py
 
 学习奖励还会逐步惩罚落后于均匀执行进度的剩余量，并在终局惩罚未成交量或收盘兜底依赖量。默认系数为 10 bp 和 1,000 bp；这是训练信号，不并入报告的经济交易成本。
 
+如需训练“Q-learning + 随机方案 C”，可以显式运行 `python .\run_experiment.py --deadline-c-mode stochastic --output-dir .\outputs\advanced_self_play_autonomous_stochastic_c`。C 在落后计划时随机改变 Agent 动作下限、限价加价和追赶数量；Q 表按最终执行动作更新。此配置不会覆盖默认纯 Q 检查点，且仍保留收盘兜底来保证模拟完单。
+
 小规模运行：
 
 ```powershell
@@ -26,7 +28,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 - [限价单多智能体模型机制说明](multi_agent_execution/限价单多智能体模型机制说明.md)：状态、动作、队列撮合、Agent 自主决策与终端完单兜底、奖励、成本和研究边界。
 - [多智能体交易模型逐步运行机制详解（自主决策版）](multi_agent_execution/多智能体交易模型逐步运行机制详解_自主决策版.md)：按程序执行顺序解释初始化、状态和动作、每个 30 秒步的撮合流程、终端兜底、Q-learning 更新、训练评估与指标口径。
 - [完单惩罚配对验证记录](multi_agent_execution/penalty_shaping_validation.md)：对比加入逐步进度惩罚和终局残余惩罚前后的兜底成交量与经济成本。
-- [方案 C 兜底量配对评估](multi_agent_execution/方案C兜底量配对评估.md)：在同一组冻结 Q 检查点和配对随机种子下，比较纯 Agent 与评估期 C 截止加急。
+- [方案 C 随机介入与训练评估](multi_agent_execution/方案C兜底量配对评估.md)：比较纯 Q、确定性 C、随机 C 评估覆盖，以及将随机 C 纳入 Q-learning 训练后的配对表现。
 - [项目运行指南](multi_agent_execution/README.md)：参数、运行入口和输出文件。
 - `multi_agent_execution/模型主要运行机制.md`：限价单版本之前的历史机制说明，不能代替新文档。
 

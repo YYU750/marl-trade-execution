@@ -24,7 +24,15 @@ python .\run_advanced_self_play.py
 python .\compare_deadline_c_overlay.py
 ```
 
-该脚本只在评估时覆盖一部分盘中动作，不改变训练和主入口的默认策略；配对结果写入 `outputs/c_overlay_comparison_current_model/`。
+该脚本在同一冻结检查点和配对随机种子上比较纯 Q、确定性 C 和随机 C，不改变策略训练；结果写入 `outputs/c_overlay_comparison_with_stochastic_c/`。
+
+若希望把随机 C 直接纳入 A、B 的学习行为策略，可运行：
+
+```powershell
+python .\run_experiment.py --deadline-c-mode stochastic --output-dir .\outputs\advanced_self_play_autonomous_stochastic_c
+```
+
+此模式下 Agent 先按 Q 表提出动作；只有执行进度落后线性计划时，随机 C 才按阶段与缺口概率介入，并随机抽取动作下限、报价加价档和追赶数量比例。Q 表使用最终实际执行的动作更新。默认 `deadline-c-mode=none` 仍是纯 Q 自主决策，因此 C 训练结果保存在独立目录，不覆盖纯 Q 检查点。
 
 默认参数：
 
@@ -46,6 +54,8 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 ```
 
 试跑可确认代码、数据保存和统计链路可运行；小样本不能用来推断策略优劣或收敛。
+
+随机 C 的本次完整试跑及配对结果见[方案 C 随机介入与训练评估](./方案C兜底量配对评估.md)。
 
 ## 智能体和环境
 

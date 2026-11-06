@@ -69,6 +69,10 @@ def parse_args() -> argparse.Namespace:
         "--terminal-unfilled-penalty-bps", type=float, default=1_000.0,
         help="terminal learning penalty per full-order fraction left unfilled or sent to the backstop",
     )
+    parser.add_argument(
+        "--deadline-c-mode", choices=("none", "stochastic"), default="none",
+        help="optionally integrate a stochastic, schedule-aware C action component into Q-agent decisions",
+    )
     parser.add_argument("--seed", type=int, default=20261103)
     parser.add_argument(
         "--completion-mode", choices=("autonomous", "none"), default="autonomous",
@@ -86,7 +90,10 @@ def parse_args() -> argparse.Namespace:
     if args.schedule_deficit_penalty_bps < 0 or args.terminal_unfilled_penalty_bps < 0:
         parser.error("completion penalty coefficients cannot be negative")
     if args.output_dir is None:
-        suffix = "autonomous_completion" if args.completion_mode == "autonomous" else "no_completion"
+        if args.completion_mode == "autonomous":
+            suffix = "autonomous_stochastic_c" if args.deadline_c_mode == "stochastic" else "autonomous_completion"
+        else:
+            suffix = "no_completion_stochastic_c" if args.deadline_c_mode == "stochastic" else "no_completion"
         args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}"
     return args
 
@@ -154,17 +161,80 @@ def frozen_action(agent: QLearningAgent, obs: Any, rng: random.Random) -> int:
     return rng.choice(tied)
 
 
+def _weighted_choice(draw: float, values: tuple[int, ...], weights: tuple[float, ...]) -> int:
+    threshold = min(max(draw, 0.0), 1.0 - 1e-15)
+    cumulative = 0.0
+    for value, weight in zip(values, weights):
+        cumulative += weight
+        if threshold < cumulative:
+            return value
+    return values[-1]
+
+
+def stochastic_c_decision(stage: str, remaining: float, step: int,
+                          config: Config, draws: tuple[float, float, float, float]
+                          ) -> tuple[int, int, float, bool, float]:
+    """Sample a risk-conditioned C intervention for the current Q decision.
+
+    C only enters after the linear schedule is missed. Its intervention chance,
+    action floor, price escalation, and catch-up fraction all vary stochastically
+    by deadline stage, with stronger pressure closer to the close.
+    """
+    # Randomized intervention becomes more likely and more aggressive as the
+    # close approaches, but early interventions favor passive quotes to limit
+    # taker fees and price impact. Each stage tuple is:
+    # base probability, action floors/weights, quote ticks/weights, catch-up range.
+    stages = {
+        "early_autonomous_window": (
+            0.12, (1, 2, 3), (0.10, 0.55, 0.35),
+            (0, 1), (0.85, 0.15), (0.10, 0.30),
+        ),
+        "urgency_window": (
+            0.32, (2, 3, 4), (0.12, 0.55, 0.33),
+            (0, 1, 2), (0.62, 0.30, 0.08), (0.25, 0.55),
+        ),
+        "high_urgency_window": (
+            0.60, (3, 4), (0.38, 0.62),
+            (0, 1, 2, 3), (0.52, 0.28, 0.15, 0.05), (0.40, 0.80),
+        ),
+        "final_sweep_window": (
+            0.88, (3, 4), (0.10, 0.90),
+            (0, 1, 2, 3, 4, 5, 6), (0.24, 0.22, 0.18, 0.14, 0.10, 0.07, 0.05),
+            (0.70, 1.00),
+        ),
+    }
+    if stage not in stages:
+        return 0, 0, 0.0, False, 0.0
+
+    (base_probability, floor_values, floor_weights, tick_values, tick_weights,
+     quantity_range) = stages[stage]
+    schedule_remaining = config.order_size * max(config.horizon - step - 1, 0) / config.horizon
+    deficit_slices = max(0.0, remaining - schedule_remaining) / max(config.base_slice, 1.0)
+    probability = min(0.98, base_probability + min(0.20, deficit_slices * 0.03))
+    gate_draw, floor_draw, tick_draw, quantity_draw = draws
+    if gate_draw >= probability:
+        return 0, 0, 0.0, False, probability
+
+    floor = _weighted_choice(floor_draw, floor_values, floor_weights)
+    ticks = _weighted_choice(tick_draw, tick_values, tick_weights)
+    low, high = quantity_range
+    catch_up_fraction = low + (high - low) * quantity_draw
+    return floor, ticks, catch_up_fraction, True, probability
+
+
 def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             seed: int, fee_bps: float, volatility_multiplier: float,
             epsilon: float = 0.0, training: bool = False,
             trace_rows: list[dict[str, Any]] | None = None,
             completion_mode: str = "autonomous",
-            deadline_c_overlay: bool = False) -> dict[str, Any]:
+            deadline_c_mode: str = "none") -> dict[str, Any]:
     """Run one synchronous episode with event-based limit-order execution."""
     if completion_mode not in {"autonomous", "none"}:
         raise ValueError("completion_mode must be 'autonomous' or 'none'")
-    if deadline_c_overlay and training:
-        raise ValueError("The C overlay is evaluation-only; train the Q agents without action overrides")
+    if deadline_c_mode not in {"none", "deterministic", "stochastic"}:
+        raise ValueError("deadline_c_mode must be 'none', 'deterministic', or 'stochastic'")
+    if deadline_c_mode == "deterministic" and training:
+        raise ValueError("Deterministic C is evaluation-only; use stochastic C to train the integrated policy")
     rng_a = random.Random(seed ^ 0x13579BDF)
     rng_b = random.Random(seed ^ 0x2468ACE0)
     tape = make_market_tape(
@@ -185,6 +255,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     terminal_residual_penalty_total = {"A": 0.0, "B": 0.0}
     deadline_urgency_steps = {"A": 0, "B": 0}
     deadline_action_overrides = {"A": 0, "B": 0}
+    deadline_c_interventions = {"A": 0, "B": 0}
     gross_cash = {"A": 0.0, "B": 0.0}
     fee_cash = {"A": 0.0, "B": 0.0}
     prev_qty = {"A": 0.0, "B": 0.0}
@@ -193,6 +264,15 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     orders: dict[str, ChildOrder | None] = {"A": None, "B": None}
     agents = {"A": agent_a, "B": agent_b}
     rngs = {"A": rng_a, "B": rng_b}
+    c_rngs = {
+        "A": random.Random(seed ^ 0x57C011A1),
+        "B": random.Random(seed ^ 0x57C022B2),
+    }
+    c_random_draws = {
+        name: [tuple(c_rngs[name].random() for _ in range(4))
+               for _ in range(config.horizon)]
+        for name in ("A", "B")
+    }
 
     for t in range(config.horizon):
         event = tape[t]
@@ -245,6 +325,9 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         action_floor: dict[str, int] = {"A": 0, "B": 0}
         urgency_ticks: dict[str, int] = {"A": 0, "B": 0}
         urgency_stage: dict[str, str] = {"A": "disabled", "B": "disabled"}
+        c_intervened: dict[str, bool] = {"A": False, "B": False}
+        c_probability: dict[str, float] = {"A": 0.0, "B": 0.0}
+        c_quantity_fraction: dict[str, float] = {"A": 0.0, "B": 0.0}
         for name in ("A", "B"):
             if training:
                 proposed_action_idx[name] = agents[name].select(
@@ -252,17 +335,34 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 )
             else:
                 proposed_action_idx[name] = frozen_action(agents[name], observations[name], rngs[name])
-            if deadline_c_overlay:
-                action_floor[name], urgency_ticks[name], urgency_stage[name] = deadline_urgency(
+            if deadline_c_mode != "none":
+                rule_floor, rule_ticks, urgency_stage[name] = deadline_urgency(
                     t, config.horizon, remaining[name], config.order_size,
                 )
-                if urgency_stage[name] not in {"on_schedule", "early_autonomous_window"}:
-                    deadline_urgency_steps[name] += 1
+                if urgency_stage[name] != "on_schedule":
+                    if deadline_c_mode == "deterministic":
+                        if urgency_stage[name] != "early_autonomous_window":
+                            deadline_urgency_steps[name] += 1
+                            action_floor[name], urgency_ticks[name] = rule_floor, rule_ticks
+                            c_intervened[name] = True
+                            c_probability[name] = 1.0
+                            c_quantity_fraction[name] = 1.0
+                    else:
+                        deadline_urgency_steps[name] += 1
+                        (action_floor[name], urgency_ticks[name], c_quantity_fraction[name],
+                         c_intervened[name], c_probability[name]) = stochastic_c_decision(
+                            urgency_stage[name], remaining[name], t, config,
+                            c_random_draws[name][t],
+                        )
+                elif deadline_c_mode == "stochastic":
+                    c_probability[name] = 0.0
             else:
                 urgency_stage[name] = "agent_autonomous"
             action_idx[name] = max(proposed_action_idx[name], action_floor[name])
             if action_idx[name] != proposed_action_idx[name]:
                 deadline_action_overrides[name] += 1
+            if c_intervened[name]:
+                deadline_c_interventions[name] += 1
 
         submitted_this_step = {"A": 0.0, "B": 0.0}
         policy_action_qty = {"A": 0.0, "B": 0.0}
@@ -284,12 +384,13 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 orders[name] = None
             policy_action_qty[name] = min(remaining[name], config.base_slice * ACTIONS[idx])
             order_qty = policy_action_qty[name]
-            if (deadline_c_overlay
-                    and urgency_stage[name] in {"urgency_window", "high_urgency_window", "final_sweep_window"}
-                    and idx == 4):
+            if c_intervened[name] and idx > 0:
                 steps_left = max(1, config.horizon - t)
                 catch_up_qty = remaining[name] / steps_left
-                order_qty = min(remaining[name], max(order_qty, catch_up_qty))
+                order_qty = min(
+                    remaining[name],
+                    order_qty + c_quantity_fraction[name] * max(0.0, catch_up_qty - order_qty),
+                )
                 deadline_catch_up_qty[name] = max(0.0, order_qty - policy_action_qty[name])
             submitted_this_step[name] = order_qty
             submitted[name] += order_qty
@@ -496,7 +597,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                     "proposed_action": ACTION_NAMES[proposed_action_idx[name]],
                     "action": ACTION_NAMES[action_idx[name]],
                     "action_multiplier": ACTIONS[action_idx[name]],
-                    "deadline_c_overlay_enabled": deadline_c_overlay,
+                    "deadline_c_mode": deadline_c_mode,
+                    "deadline_c_intervened": c_intervened[name],
+                    "deadline_c_probability": c_probability[name],
+                    "deadline_catch_up_fraction": c_quantity_fraction[name],
                     "deadline_action_floor": action_floor[name],
                     "deadline_urgency_ticks": urgency_ticks[name],
                     "deadline_urgency_stage": urgency_stage[name],
@@ -594,6 +698,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         "deadline_urgency_steps_B": deadline_urgency_steps["B"],
         "deadline_action_overrides_A": deadline_action_overrides["A"],
         "deadline_action_overrides_B": deadline_action_overrides["B"],
+        "deadline_c_interventions_A": deadline_c_interventions["A"],
+        "deadline_c_interventions_B": deadline_c_interventions["B"],
         "schedule_deficit_penalty_A_bps": schedule_deficit_penalty_total["A"],
         "schedule_deficit_penalty_B_bps": schedule_deficit_penalty_total["B"],
         "terminal_residual_penalty_A_bps": terminal_residual_penalty_total["A"],
@@ -664,7 +770,8 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
         epsilon = config.epsilon_start + (config.epsilon_end - config.epsilon_start) * (ep - 1) / max(args.episodes - 1, 1)
         result = episode(agent_a, agent_b, config, run_seed + ep * 37 + 11,
                          args.fee_bps, 1.0, epsilon=epsilon, training=True,
-                         completion_mode=args.completion_mode)
+                         completion_mode=args.completion_mode,
+                         deadline_c_mode=args.deadline_c_mode)
         rewards_a.append(result["reward_A"])
         rewards_b.append(result["reward_B"])
         costs_a.append(result["cost_A_bps"])
@@ -683,6 +790,8 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
             "B_forced_completion_shares": result["forced_completion_B"],
             "A_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_A_bps"],
             "B_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_B_bps"],
+            "A_deadline_c_interventions": result["deadline_c_interventions_A"],
+            "B_deadline_c_interventions": result["deadline_c_interventions_B"],
             "A_schedule_deficit_penalty_bps": result["schedule_deficit_penalty_A_bps"],
             "B_schedule_deficit_penalty_bps": result["schedule_deficit_penalty_B_bps"],
             "A_terminal_residual_penalty_bps": result["terminal_residual_penalty_A_bps"],
@@ -733,7 +842,8 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                     b = instantiate_snapshot(config, snapshots[b_cp]["B"])
                     result = episode(a, b, config, seed, args.fee_bps,
                                      volatility_multiplier, training=False,
-                                     completion_mode=args.completion_mode)
+                                     completion_mode=args.completion_mode,
+                                     deadline_c_mode=args.deadline_c_mode)
                     rows.append({
                         "training_run": run_id, "A_checkpoint": a_cp, "B_checkpoint": b_cp,
                         "scenario": scenario, "seed": seed,
@@ -752,6 +862,9 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                         "schedule_deficit_penalty_B_bps": result["schedule_deficit_penalty_B_bps"],
                         "terminal_residual_penalty_A_bps": result["terminal_residual_penalty_A_bps"],
                         "terminal_residual_penalty_B_bps": result["terminal_residual_penalty_B_bps"],
+                        "deadline_c_mode": args.deadline_c_mode,
+                        "deadline_c_interventions_A": result["deadline_c_interventions_A"],
+                        "deadline_c_interventions_B": result["deadline_c_interventions_B"],
                         "cancelled_A": result["cancelled_A"], "cancelled_B": result["cancelled_B"],
                         "reward_A": result["reward_A"], "reward_B": result["reward_B"],
                         "actions_A": result["actions_A"], "actions_B": result["actions_B"],
@@ -878,13 +991,21 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                   diagnostics: list[dict[str, Any]]) -> str:
     final_episode = args.episodes
     if args.completion_mode == "autonomous":
-        mode_note = (
-            "- 完单方式：全程由 Q-learning Agent 自主选择 60 个时间步的动作、报价和常规子单数量；"
-            "不按进度覆盖动作。第 60 步普通撮合后，环境只对剩余母单执行合成收盘兜底，因此模拟器内完成率为 100%；"
-            "兜底成交量和成本单独报告，不能算作 Agent 自主成交。"
-        )
-        mode_label = "自主决策 + 终端完单兜底"
-        output_path = "outputs/advanced_self_play_autonomous_completion"
+        if args.deadline_c_mode == "stochastic":
+            mode_note = (
+                "- 盘中策略：Q-learning Agent 先自主选动作；当进度落后时，随机 C 决策按阶段概率抽取动作下限、报价加价档和追赶数量比例；"
+                "Q 表按最终实际执行的动作更新。收盘兜底只负责剩余未成交量，兜底量和成本单独报告。"
+            )
+            mode_label = "Q-learning + 随机 C 决策 + 终端完单兜底"
+            output_path = "outputs/advanced_self_play_autonomous_stochastic_c"
+        else:
+            mode_note = (
+                "- 完单方式：全程由 Q-learning Agent 自主选择 60 个时间步的动作、报价和常规子单数量；"
+                "不按进度覆盖动作。第 60 步普通撮合后，环境只对剩余母单执行合成收盘兜底，因此模拟器内完成率为 100%；"
+                "兜底成交量和成本单独报告，不能算作 Agent 自主成交。"
+            )
+            mode_label = "自主决策 + 终端完单兜底"
+            output_path = "outputs/advanced_self_play_autonomous_completion"
     else:
         mode_note = (
             "- 完单方式：未启用终端完单兜底；所有盘中动作由 Q-learning 自主选择，订单可能无法按时完成。"
@@ -947,7 +1068,7 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               "## 解释边界", "",
               "- A、B 在每步基于同一交易前快照同步决策，各自只能观察自身库存、上期对手成交量和自己的当前挂单；市场之后统一处理可成交限价单和卖方主动订单流。终端兜底数量不是 Agent 自主成交量。",
               "- 动作 0 保留已有报价或等待；动作 1–3 分别挂深档买单、最佳买价和价差内报价，动作 4 提交价格上限为卖一价上方一档的可成交限价 IOC。被动订单可部分成交并保留，队列在 4 个时间步（2 分钟）后过期；IOC 未成交余量立即撤销。",
-              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。学习奖励按实际成交成本、每步进度缺口惩罚及终局残余惩罚计算；自主模式终局惩罚按收盘兜底前余量计算。默认模式的盘中实际动作等于 Agent 提出的 Q 动作。下一状态只从已尝试动作中自举。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
+              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。学习奖励按实际成交成本、每步进度缺口惩罚及终局残余惩罚计算；自主模式终局惩罚按收盘兜底前余量计算。纯 Q 模式下盘中实际动作等于 Agent 提出的动作；随机 C 模式下 Q 动作作为候选，最终执行动作可能经 C 抽样调整，Q 表按最终动作更新。下一状态只从已尝试动作中自举。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
               "- 买方被动成交由卖方主动订单流穿过队列触发；IOC 限价单按各自报价上限消耗合成卖盘。手续费只按实际成交名义金额计算。",
               "- 检查点交叉对局把已保存的策略冻结后进行组合评估，避免评估过程继续改写 Q 表；配对种子共享外生价格冲击。",
               "- 稳定性要结合多训练种子的滚动奖励、成本波动、状态覆盖与检查点交叉结果判断。单一训练曲线变平不足以证明收敛。",
@@ -1035,6 +1156,43 @@ def main() -> None:
             "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",
             "submission_vs_execution": "submitted child quantity is not treated as filled; parent inventory falls only by matched execution quantity",
             "completion_mode": args.completion_mode,
+            "deadline_c_mode": args.deadline_c_mode,
+            "deadline_c_integration": (
+                "stochastic C perturbations participate in the Q behavior policy; the Q update uses the final action index executed"
+                if args.deadline_c_mode == "stochastic" else
+                "disabled; Q-learning actions are used directly"
+            ),
+            "deadline_c_policy": ({
+                "activation": "only when behind the post-decision linear schedule",
+                "base_probability_by_stage": {
+                    "early_autonomous_window": 0.12,
+                    "urgency_window": 0.32,
+                    "high_urgency_window": 0.60,
+                    "final_sweep_window": 0.88,
+                },
+                "deficit_probability_increment_per_base_slice": 0.03,
+                "deficit_increment_cap": 0.20,
+                "probability_cap": 0.98,
+                "action_floor_distributions": {
+                    "early_autonomous_window": {"1": 0.10, "2": 0.55, "3": 0.35},
+                    "urgency_window": {"2": 0.12, "3": 0.55, "4": 0.33},
+                    "high_urgency_window": {"3": 0.38, "4": 0.62},
+                    "final_sweep_window": {"3": 0.10, "4": 0.90},
+                },
+                "quote_tick_distributions": {
+                    "early_autonomous_window": {"0": 0.85, "1": 0.15},
+                    "urgency_window": {"0": 0.62, "1": 0.30, "2": 0.08},
+                    "high_urgency_window": {"0": 0.52, "1": 0.28, "2": 0.15, "3": 0.05},
+                    "final_sweep_window": {"0": 0.24, "1": 0.22, "2": 0.18, "3": 0.14, "4": 0.10, "5": 0.07, "6": 0.05},
+                },
+                "catch_up_fraction_uniform_range_by_stage": {
+                    "early_autonomous_window": [0.10, 0.30],
+                    "urgency_window": [0.25, 0.55],
+                    "high_urgency_window": [0.40, 0.80],
+                    "final_sweep_window": [0.70, 1.00],
+                },
+                "q_update_uses_final_action_index": True,
+            } if args.deadline_c_mode == "stochastic" else None),
             "completion_constraint": (
                 "hard completion by a synthetic market-on-close backstop; Q-learning controls all intraday actions and residual quantity is filled at an impact-stressed average price"
                 if args.completion_mode == "autonomous" else
