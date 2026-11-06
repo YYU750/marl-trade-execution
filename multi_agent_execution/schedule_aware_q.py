@@ -357,8 +357,9 @@ class SchemeCDecisionPolicy:
     This is a separate Q head from the five ordinary order-placement actions.
     Whenever the order is behind its remaining-time schedule, it can choose
     no intervention, or one of three IOC quote offsets crossed with four
-    catch-up fractions. The quantity fraction interpolates from the ordinary
-    Q-selected child size toward the current average quantity needed to finish.
+    catch-up fractions. A nonzero C action raises the ordinary action floor to
+    the capped IOC (whose base size is two TWAP slices), then adds the selected
+    fraction of the current schedule deficit, capped by remaining inventory.
     Exact decision time is part of the state, so the policy learns when and
     how much to accelerate.
     """
