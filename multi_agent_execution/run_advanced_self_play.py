@@ -60,6 +60,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-seeds", type=int, default=30, help="paired evaluation seeds per cell")
     parser.add_argument("--checkpoint-interval", type=int, default=100)
     parser.add_argument("--fee-bps", type=float, default=30.0, help="one-way fee in basis points; 30bp = 0.3%%")
+    parser.add_argument(
+        "--schedule-deficit-penalty-bps", type=float, default=10.0,
+        help="per-step learning penalty coefficient for falling behind the even-fill schedule",
+    )
+    parser.add_argument(
+        "--terminal-unfilled-penalty-bps", type=float, default=1_000.0,
+        help="terminal learning penalty per full-order fraction left unfilled or sent to the backstop",
+    )
     parser.add_argument("--seed", type=int, default=20261103)
     parser.add_argument(
         "--completion-mode", choices=("autonomous", "none"), default="autonomous",
@@ -74,6 +82,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("checkpoint-interval must be positive")
     if args.fee_bps < 0:
         parser.error("fee-bps cannot be negative")
+    if args.schedule_deficit_penalty_bps < 0 or args.terminal_unfilled_penalty_bps < 0:
+        parser.error("completion penalty coefficients cannot be negative")
     if args.output_dir is None:
         suffix = "autonomous_completion" if args.completion_mode == "autonomous" else "no_completion"
         args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}"
@@ -167,6 +177,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     taker_fills = {"A": 0.0, "B": 0.0}
     forced_fills = {"A": 0.0, "B": 0.0}
     forced_cost_contribution_bps = {"A": 0.0, "B": 0.0}
+    schedule_deficit_penalty_total = {"A": 0.0, "B": 0.0}
+    terminal_residual_penalty_total = {"A": 0.0, "B": 0.0}
     gross_cash = {"A": 0.0, "B": 0.0}
     fee_cash = {"A": 0.0, "B": 0.0}
     prev_qty = {"A": 0.0, "B": 0.0}
@@ -377,8 +389,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 shortfall_bps = (avg_price_including_fee / initial_mid - 1) * 10_000.0
             else:
                 shortfall_bps = 0.0
-            # Reward is based on executed shares only. The unfilled parent
-            # order is evaluated at termination and receives a separate penalty.
+            # Economic execution reward is based on actual fills. The schedule
+            # and terminal residual penalties are added to the learning reward.
             reward = -(actual_fill_this_step[name] / config.order_size) * shortfall_bps
             rewards[name] = reward
             action_counts[name][ACTION_NAMES[action_idx[name]]] += 1
@@ -409,12 +421,22 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             for name in ("A", "B")
         }
         learning_rewards: dict[str, float] = {}
+        reward_components: dict[str, dict[str, float]] = {}
         for name in ("A", "B"):
-            learning_reward = learning_reward_for(
-                rewards[name], remaining[name], config, terminal, next_mid, initial_mid,
+            terminal_residual_qty = (
+                forced_completion_qty[name]
+                if completion_mode == "autonomous" else remaining[name]
+            ) if terminal else 0.0
+            components = learning_reward_components(
+                rewards[name], remaining[name], config, terminal, next_mid,
+                initial_mid, t, terminal_residual_qty,
             )
+            reward_components[name] = components
+            learning_reward = components["learning_reward"]
             learning_rewards[name] = learning_reward
             total_reward[name] += learning_reward
+            schedule_deficit_penalty_total[name] += components["schedule_deficit_penalty_bps"]
+            terminal_residual_penalty_total[name] += components["terminal_residual_penalty_bps"]
         update_diagnostics: dict[str, dict[str, Any]] = {}
         if training:
             # Updates occur only after both current actions and the shared
@@ -426,9 +448,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         if trace_rows is not None:
             for name in ("A", "B"):
                 opponent_name = "B" if name == "A" else "A"
-                td_reward = learning_reward_for(
-                    rewards[name], remaining[name], config, terminal, next_mid, initial_mid,
-                )
+                components = reward_components[name]
+                td_reward = components["learning_reward"]
                 update = update_diagnostics.get(name, {})
                 state = (agents[name].state_key(observations[name])
                          if hasattr(agents[name], "state_key")
@@ -490,7 +511,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                                                   actual_fill_this_step[name]
                                                   if actual_fill_this_step[name] else None),
                     "weighted_step_reward": rewards[name],
-                    "terminal_unfilled_and_opportunity_adjustment_reward": td_reward - rewards[name],
+                    "schedule_deficit_penalty_bps": components["schedule_deficit_penalty_bps"],
+                    "terminal_residual_penalty_bps": components["terminal_residual_penalty_bps"],
+                    "terminal_opportunity_cost_adjustment_bps": components["terminal_opportunity_cost_bps"],
+                    "learning_reward_adjustment": td_reward - rewards[name],
                     "td_reward": td_reward,
                     "gamma": config.discount,
                     "td_future_value": update.get("future_value"),
@@ -532,6 +556,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         "forced_completion_B": forced_fills["B"],
         "forced_completion_cost_contribution_A_bps": forced_cost_contribution_bps["A"],
         "forced_completion_cost_contribution_B_bps": forced_cost_contribution_bps["B"],
+        "schedule_deficit_penalty_A_bps": schedule_deficit_penalty_total["A"],
+        "schedule_deficit_penalty_B_bps": schedule_deficit_penalty_total["B"],
+        "terminal_residual_penalty_A_bps": terminal_residual_penalty_total["A"],
+        "terminal_residual_penalty_B_bps": terminal_residual_penalty_total["B"],
         "cancelled_A": cancelled["A"], "cancelled_B": cancelled["B"],
         "reward_A": total_reward["A"], "reward_B": total_reward["B"],
         "actions_A": json.dumps(dict(action_counts["A"]), ensure_ascii=False, sort_keys=True),
@@ -539,16 +567,44 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     }
 
 
-def learning_reward_for(step_reward: float, remaining: float, config: Config,
-                        terminal: bool, terminal_mid: float,
-                        initial_mid: float) -> float:
+def learning_reward_components(step_reward: float, remaining: float, config: Config,
+                               terminal: bool, terminal_mid: float,
+                               initial_mid: float, step_index: int,
+                               terminal_residual_qty: float = 0.0) -> dict[str, float]:
+    """Add schedule-risk feedback and a terminal residual penalty to the fill reward.
+
+    Before the last step, the schedule term penalizes shares left above the
+    even-fill target for the remaining steps. At termination, the residual is
+    the quantity that remains unfilled in ``none`` mode or is sent to the
+    synthetic backstop in ``autonomous`` mode.
+    """
+    schedule_penalty_bps = 0.0
+    terminal_penalty_bps = 0.0
+    opportunity_cost_bps = 0.0
     if terminal:
-        unfilled_fraction = remaining / config.order_size
+        residual_fraction = max(0.0, terminal_residual_qty) / config.order_size
+        terminal_penalty_bps = residual_fraction * config.terminal_unfilled_penalty_bps
+        unfilled_fraction = max(0.0, remaining) / config.order_size
         opportunity_cost_bps = ((terminal_mid / initial_mid - 1.0)
                                 * 10_000.0 * unfilled_fraction)
-        return (step_reward - unfilled_fraction * config.terminal_unfilled_penalty_bps
-                - opportunity_cost_bps)
-    return step_reward
+    else:
+        steps_after = max(0, config.horizon - step_index - 1)
+        schedule_remaining = config.base_slice * steps_after
+        schedule_deficit = max(0.0, remaining - schedule_remaining)
+        schedule_penalty_bps = (
+            config.schedule_deficit_penalty_bps
+            * schedule_deficit / config.order_size
+        )
+    learning_reward = (
+        step_reward - schedule_penalty_bps - terminal_penalty_bps
+        - opportunity_cost_bps
+    )
+    return {
+        "learning_reward": learning_reward,
+        "schedule_deficit_penalty_bps": schedule_penalty_bps,
+        "terminal_residual_penalty_bps": terminal_penalty_bps,
+        "terminal_opportunity_cost_bps": opportunity_cost_bps,
+    }
 
 
 def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[dict[int, dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], QLearningAgent, QLearningAgent]:
@@ -589,6 +645,10 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
             "B_forced_completion_shares": result["forced_completion_B"],
             "A_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_A_bps"],
             "B_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_B_bps"],
+            "A_schedule_deficit_penalty_bps": result["schedule_deficit_penalty_A_bps"],
+            "B_schedule_deficit_penalty_bps": result["schedule_deficit_penalty_B_bps"],
+            "A_terminal_residual_penalty_bps": result["terminal_residual_penalty_A_bps"],
+            "B_terminal_residual_penalty_bps": result["terminal_residual_penalty_B_bps"],
             "A_cancelled_shares": result["cancelled_A"], "B_cancelled_shares": result["cancelled_B"],
             "A_actions": result["actions_A"], "B_actions": result["actions_B"],
         })
@@ -650,6 +710,10 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                         "forced_completion_B": result["forced_completion_B"],
                         "forced_completion_cost_contribution_A_bps": result["forced_completion_cost_contribution_A_bps"],
                         "forced_completion_cost_contribution_B_bps": result["forced_completion_cost_contribution_B_bps"],
+                        "schedule_deficit_penalty_A_bps": result["schedule_deficit_penalty_A_bps"],
+                        "schedule_deficit_penalty_B_bps": result["schedule_deficit_penalty_B_bps"],
+                        "terminal_residual_penalty_A_bps": result["terminal_residual_penalty_A_bps"],
+                        "terminal_residual_penalty_B_bps": result["terminal_residual_penalty_B_bps"],
                         "cancelled_A": result["cancelled_A"], "cancelled_B": result["cancelled_B"],
                         "reward_A": result["reward_A"], "reward_B": result["reward_B"],
                         "actions_A": result["actions_A"], "actions_B": result["actions_B"],
@@ -690,6 +754,10 @@ def summarize_cross_play(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             "B_forced_completion_mean": statistics.fmean(r["forced_completion_B"] for r in group),
             "A_forced_completion_cost_contribution_mean_bps": statistics.fmean(r["forced_completion_cost_contribution_A_bps"] for r in group),
             "B_forced_completion_cost_contribution_mean_bps": statistics.fmean(r["forced_completion_cost_contribution_B_bps"] for r in group),
+            "A_schedule_deficit_penalty_mean_bps": statistics.fmean(r["schedule_deficit_penalty_A_bps"] for r in group),
+            "B_schedule_deficit_penalty_mean_bps": statistics.fmean(r["schedule_deficit_penalty_B_bps"] for r in group),
+            "A_terminal_residual_penalty_mean_bps": statistics.fmean(r["terminal_residual_penalty_A_bps"] for r in group),
+            "B_terminal_residual_penalty_mean_bps": statistics.fmean(r["terminal_residual_penalty_B_bps"] for r in group),
             "A_cancelled_mean": statistics.fmean(r["cancelled_A"] for r in group),
             "B_cancelled_mean": statistics.fmean(r["cancelled_B"] for r in group),
             "A_reward_mean": statistics.fmean(r["reward_A"] for r in group),
@@ -792,14 +860,15 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         "- 训练在正常波动环境进行；训练检查点分别冻结后，在正常与 2 倍波动场景做交叉对局。",
         f"- 本结果属于路线 A（A/B 双边同步 Independent Q-learning）；路线 B 的规则引导 Double Q 对固定规则对手实验须单独报告。",
         f"- 当前单边费率为 {args.fee_bps:g} bp（{args.fee_bps / 100:g}%）；按初始价 {Config().initial_price:g}、每方母单 {Config().order_size:,.0f} 股估算，单家满额手续费约 {Config().initial_price * Config().order_size * args.fee_bps / 10_000:,.0f}。",
+        f"- 完成惩罚：每步对落后均匀进度的数量按 {args.schedule_deficit_penalty_bps:g} bp 系数惩罚；终局对未完成量或送入收盘兜底的数量按 {args.terminal_unfilled_penalty_bps:g} bp 系数惩罚。该项属于学习奖励，不计入经济交易成本。",
         f"- 完单配置：{mode_label}。",
         mode_note,
         "- 普通执行仍是教学用事件驱动限价单：成交量由队列、可见卖盘和随机订单流决定；IOC 只触达其限价范围内的卖盘；终端兜底使用显式合成深层流动性价格曲线，并单独记录强制成交股数。",
         "- 本文件的数字仅是本次命令参数下的模拟结果，不自动代表收敛或现实市场效果。", "",
         "## 最终检查点的交叉对局", "",
               f"下表按训练运行和场景汇总 A/B 均采用最终检查点的对局。成本越低越好；当前完单模式为“{mode_label}”，并同时列出终端强制成交股数与其成本贡献。", "",
-        "| 训练运行 | 场景 | A 成本 (bp) | A 完成率 | A 强制股数 | A 强制成本贡献 (bp) | B 成本 (bp) | B 完成率 | B 强制股数 | B 强制成本贡献 (bp) |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| 训练运行 | 场景 | A 成本 (bp) | A 完成率 | A 强制股数 | A 进度惩罚 (bp) | A 残余惩罚 (bp) | A 强制成本贡献 (bp) | B 成本 (bp) | B 完成率 | B 强制股数 | B 进度惩罚 (bp) | B 残余惩罚 (bp) | B 强制成本贡献 (bp) |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for run_id in sorted({r["training_run"] for r in summaries}):
         for scenario, _ in SCENARIOS:
@@ -807,9 +876,13 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
             lines.append(
                 f"| {run_id} | {scenario} | {row['A_cost_mean_bps']:.3f} | "
                 f"{row['A_completion_mean']:.3f} | {row['A_forced_completion_mean']:.0f} | "
+                f"{row['A_schedule_deficit_penalty_mean_bps']:.3f} | "
+                f"{row['A_terminal_residual_penalty_mean_bps']:.3f} | "
                 f"{row['A_forced_completion_cost_contribution_mean_bps']:.3f} | "
                 f"{row['B_cost_mean_bps']:.3f} | {row['B_completion_mean']:.3f} | "
                 f"{row['B_forced_completion_mean']:.0f} | "
+                f"{row['B_schedule_deficit_penalty_mean_bps']:.3f} | "
+                f"{row['B_terminal_residual_penalty_mean_bps']:.3f} | "
                 f"{row['B_forced_completion_cost_contribution_mean_bps']:.3f} |"
             )
     lines += ["", "## 跨训练种子汇总与学习诊断", "",
@@ -836,7 +909,7 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               "## 解释边界", "",
               "- A、B 在每步基于同一交易前快照同步决策，各自只能观察自身库存、上期对手成交量和自己的当前挂单；市场之后统一处理可成交限价单和卖方主动订单流。终端兜底数量不是 Agent 自主成交量。",
               "- 动作 0 保留已有报价或等待；动作 1–3 分别挂深档买单、最佳买价和价差内报价，动作 4 提交价格上限为卖一价上方一档的可成交限价 IOC。被动订单可部分成交并保留，队列在 4 个时间步（2 分钟）后过期；IOC 未成交余量立即撤销。",
-              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。TD 奖励按实际成交量计算；`none` 模式下未完成母单在终局计入机会成本和惩罚，`autonomous` 模式则在第 60 步由环境兜底完成。默认模式的盘中实际动作等于 Agent 提出的 Q 动作。下一状态只从已尝试动作中自举。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
+              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。学习奖励按实际成交成本、每步进度缺口惩罚及终局残余惩罚计算；自主模式终局惩罚按收盘兜底前余量计算。默认模式的盘中实际动作等于 Agent 提出的 Q 动作。下一状态只从已尝试动作中自举。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
               "- 买方被动成交由卖方主动订单流穿过队列触发；IOC 限价单按各自报价上限消耗合成卖盘。手续费只按实际成交名义金额计算。",
               "- 检查点交叉对局把已保存的策略冻结后进行组合评估，避免评估过程继续改写 Q 表；配对种子共享外生价格冲击。",
               "- 稳定性要结合多训练种子的滚动奖励、成本波动、状态覆盖与检查点交叉结果判断。单一训练曲线变平不足以证明收敛。",
@@ -852,7 +925,11 @@ def main() -> None:
     started = time.time()
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    config = Config(inventory_risk_weight=0.0)
+    config = Config(
+        inventory_risk_weight=0.0,
+        schedule_deficit_penalty_bps=args.schedule_deficit_penalty_bps,
+        terminal_unfilled_penalty_bps=args.terminal_unfilled_penalty_bps,
+    )
     all_training: list[dict[str, Any]] = []
     all_diagnostics: list[dict[str, Any]] = []
     all_raw: list[dict[str, Any]] = []
@@ -901,7 +978,10 @@ def main() -> None:
         "limit_order_book_sha256": hashlib.sha256(lob_path.read_bytes()).hexdigest(),
         "parameters": {"episodes": args.episodes, "training_runs": args.training_runs,
                        "eval_seeds": args.eval_seeds, "checkpoint_interval": args.checkpoint_interval,
-                       "fee_bps": args.fee_bps, "seed": args.seed,
+                       "fee_bps": args.fee_bps,
+                       "schedule_deficit_penalty_bps": args.schedule_deficit_penalty_bps,
+                       "terminal_unfilled_penalty_bps": args.terminal_unfilled_penalty_bps,
+                       "seed": args.seed,
                        "output_dir": output_dir_record},
         "config": {**asdict(config), "horizon_steps": config.horizon,
                    "training_scenarios": ["normal"],
@@ -911,7 +991,7 @@ def main() -> None:
             "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "state_encoding": LimitOrderAwareQLearningAgent.state_encoding,
-            "reward_alignment": "implementation shortfall on actual fills; terminal unfilled-order penalty applies only in none mode; no extra inventory-risk shaping",
+            "reward_alignment": "implementation shortfall on actual fills; per-step penalty for schedule deficit; terminal residual penalty applies to unfilled shares in none mode or backstop shares in autonomous mode; the terminal penalty is a learning signal, not economic cost",
             "untried_action_bootstrap": "only tried actions are included; default autonomous mode has no intraday execution overlay",
             "simultaneous_action_and_update": True,
             "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",

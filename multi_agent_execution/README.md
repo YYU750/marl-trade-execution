@@ -62,7 +62,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 默认合成参数见 `run_manifest.json`：最小价位为 1 bp，挂单有效期 4 步；新单排队前的外部深度均值为 0.12、0.65、1.10 个 TWAP 基准份额；每步卖方主动订单数服从均值 1.5 的泊松分布，单笔均值为 0.70 个基准份额；七档合成卖盘的平均深度依次为 0.80、0.55、0.40、0.30、0.22、0.16、0.12 个基准份额。默认普通 IOC 受前两档限价约束。这些数值是可复现实验的起始假设，不代表某个真实证券的盘口统计。
 
-训练采用 epsilon-greedy，探索率从 0.35 线性下降至 0.05，学习率为 0.15，折扣因子为 0.98。TD 奖励与实施缺口口径对齐；`autonomous` 模式由终端兜底完成母单，不产生未完成惩罚，`none` 模式仍对未完成母单计入终局惩罚。下一状态只从已尝试且可行的动作中自举，避免未尝试动作的零初值虚高。正式评价同时报告实际执行成本、完成率、强制成交股数及其成本贡献和动作分布，不用 Q 值替代经济指标。
+训练采用 epsilon-greedy，探索率从 0.35 线性下降至 0.05，学习率为 0.15，折扣因子为 0.98。学习奖励包括实际成交实施缺口、每步进度缺口惩罚，以及终局未完成量或收盘兜底依赖惩罚。默认系数分别为 10 bp 和 1,000 bp；惩罚只影响学习目标，不计入经济交易成本。`--schedule-deficit-penalty-bps` 与 `--terminal-unfilled-penalty-bps` 可用于敏感性分析。正式评价同时报告实际执行成本、完成率、强制成交股数、惩罚分项及动作分布，不用 Q 值替代经济指标。
 
 ## 实验设计
 
@@ -116,14 +116,14 @@ python .\run_followup_validation.py
 
 默认 Agent 自主决策 + 终端兜底模式写入 `outputs/advanced_self_play_autonomous_completion/`；`--completion-mode none` 无终端兜底对照写入 `outputs/advanced_self_play_no_completion/`：
 
-- `training_episodes.csv`：逐训练回合的双方奖励、成本、完成率和动作；
+- `training_episodes.csv`：逐训练回合的双方奖励、成本、完成率、动作和进度/终局惩罚分项；
 - `checkpoint_training_diagnostics.csv`：滚动奖励/成本、Q 值及状态覆盖；
 - `cross_play_raw.csv`、`cross_play_summary.csv`：交叉评估逐回合数据和汇总；
 - `self_play_stability.csv`：对角线检查点表现与训练诊断；
 - `candidate_best_response.csv`：A/B 候选集最佳反应检查和后悔值；
 - `checkpoint_qtables_run*.json`：各训练种子、各检查点双方完整 Q 表与动作访问数；
 - `qtable_run*_A.json`、`qtable_run*_B.json`：双方最终策略表；
-- `findings.md`、`run_manifest.json`：运行结果摘要、限制、配置和代码哈希。
+- `findings.md`、`run_manifest.json`：运行结果摘要、限制、配置和代码哈希。说明性逐步轨迹中的 `schedule_deficit_penalty_bps` 显示进度缺口学习惩罚，`terminal_residual_penalty_bps` 显示终局残余惩罚。
 
 旧版单学习者对固定规则对手实验保留在 `run_standard_benchmark.py`，仅用于历史结果复核；`run_experiment.py` 默认运行本文件说明的双边学习模型。
 
