@@ -11,7 +11,7 @@ cd multi_agent_execution
 python .\run_experiment.py
 ```
 
-默认配置为 30 分钟窗口、每 30 秒一步、A/B 各 100,000 股、单边手续费 30bp；训练使用 5 个独立种子、每个 500 回合，评估冻结检查点并交叉组合。默认启用 `autonomous` 模式，输出目录为 `multi_agent_execution/outputs/advanced_self_play_autonomous_completion/`。旧版 `--completion-mode c` 保留进度加急对照；`--completion-mode none` 关闭终端兜底，不保证完成订单。
+默认配置为 30 分钟窗口、每 30 秒一步、A/B 各 100,000 股、单边手续费 30bp；训练使用 5 个独立种子、每个 500 回合，评估冻结检查点并交叉组合。默认启用 `autonomous` 模式，输出目录为 `multi_agent_execution/outputs/advanced_self_play_autonomous_completion/`。该模式保留 Agent 的盘中自主决策，只在最后一步对剩余母单进行环境兜底。`--completion-mode none` 可关闭兜底作为对照，但不保证完成订单。
 
 小规模运行：
 
@@ -28,7 +28,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 ## 重要口径
 
-订单流、队列深度、可见卖盘和收盘兜底价格是合成设定，没有用真实逐笔行情校准。历史 `c` 模式试跑记录见 `multi_agent_execution/outputs/deadline_completion_c_validation/`，不能当成新默认自主模式的结果。报告成本必须同时列出完成率、Maker/Taker 成交量、终端强制成交量及其成本贡献；100% 完成由环境兜底保证，不足以证明 Q-learning 优于规则策略。
+订单流、队列深度、可见卖盘和收盘兜底价格是合成设定，没有用真实逐笔行情校准。历史试跑数据仍保存在原输出目录，仅用于回溯，不属于当前模型机制或结果。报告成本必须同时列出完成率、Maker/Taker 成交量、终端强制成交量及其成本贡献；100% 完成由环境兜底保证，不足以证明 Q-learning 优于规则策略。
 
 旧版 `outputs/advanced_self_play/` 和 `run_matched_rule_q_comparison.py` 基于提交即成交环境，不能与限价单版本直接拼表。规则策略要与新 Q 策略比较，必须在同一限价单撮合环境中重新运行。
 
