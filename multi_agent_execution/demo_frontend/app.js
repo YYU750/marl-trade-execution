@@ -106,10 +106,12 @@ function renderStep(index) {
   $("metric-step").textContent = `${state.step + 1} / ${state.data.steps.length}`;
   $("metric-mid").textContent = fmt(tr.mid_before, 4);
   $("metric-mid-change").textContent = `相对初始价 ${signed((tr.mid_before / config.initial_mid_price - 1) * 10000, 2)} bp`;
-  $("metric-rem-a").textContent = `${fmt(a.observation.own_remaining_shares, 2)} 股`;
-  $("metric-rem-b").textContent = `${fmt(b.observation.own_remaining_shares, 2)} 股`;
-  $("metric-fill-a").textContent = `已完成 ${fmt(100 * (1 - a.observation.own_remaining_shares / config.order_size_per_agent_shares), 2)}%`;
-  $("metric-fill-b").textContent = `已完成 ${fmt(100 * (1 - b.observation.own_remaining_shares / config.order_size_per_agent_shares), 2)}%`;
+  const afterA = Math.max(0, a.observation.own_remaining_shares - a.execution.submitted_quantity_shares);
+  const afterB = Math.max(0, b.observation.own_remaining_shares - b.execution.submitted_quantity_shares);
+  $("metric-rem-a").textContent = `${fmt(afterA, 2)} 股`;
+  $("metric-rem-b").textContent = `${fmt(afterB, 2)} 股`;
+  $("metric-fill-a").textContent = `本步后完成 ${fmt(100 * (1 - afterA / config.order_size_per_agent_shares), 2)}%`;
+  $("metric-fill-b").textContent = `本步后完成 ${fmt(100 * (1 - afterB / config.order_size_per_agent_shares), 2)}%`;
   $("joint-qty").textContent = `${fmt(tr.joint_submitted_quantity_shares, 2)} 股`;
   $("external-shock").textContent = `${signed(tr.external_shock_bps, 4)} bp`;
   $("temp-impact").textContent = `${fmt(tr.temporary_impact_bps, 4)} bp`;
