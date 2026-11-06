@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+import math
 
 from run_standard_benchmark import (
     ACTIONS,
@@ -283,6 +284,14 @@ class LimitOrderAwareQLearningAgent(ScheduleAwareQLearningAgent):
 
     state_encoding = "schedule_aware_limit_order_v2"
 
+    def __init__(self, config: Config, opponent_aware: bool = True):
+        super().__init__(config, opponent_aware)
+        self.scheme_c = SchemeCDecisionPolicy(config)
+
+    def freeze(self) -> None:
+        super().freeze()
+        self.scheme_c.freeze()
+
     def state_key(self, obs: Observation) -> tuple[int, ...]:
         time_phase = min(5, obs.t // 10)
         steps_left = max(obs.horizon - obs.t, 1)
@@ -326,3 +335,105 @@ class LimitOrderAwareQLearningAgent(ScheduleAwareQLearningAgent):
             self.config.horizon, self.config.step_volatility_bps,
         )
         return max(self.q.get(self.state_key(initial), [0.0] * len(ACTIONS)))
+
+
+class SchemeCDecisionPolicy:
+    """Learn when and how strongly to use the three Scheme C protections.
+
+    This is a separate Q head from the five ordinary order-placement actions.
+    Whenever the order is behind its remaining-time schedule, it can choose
+    no intervention or any of the three C urgency measures. Exact decision
+    time is part of the state, so the policy learns when to begin escalating.
+    """
+
+    action_names = ("no_c", "ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks")
+    quote_ticks = {1: 1, 2: 3, 3: 6}
+    state_encoding = "scheme_c_meta_exact_time_v1"
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.q: dict[tuple[int, ...], list[float]] = {}
+        self.action_visits: dict[tuple[int, ...], list[int]] = {}
+        self.frozen = False
+
+    def freeze(self) -> None:
+        self.frozen = True
+
+    def stage_and_actions(self, obs: Observation) -> tuple[str, list[int], bool]:
+        steps_left = max(obs.horizon - obs.t, 1)
+        schedule_remaining = self.config.order_size * steps_left / max(obs.horizon, 1)
+        tolerance = max(1e-9, obs.base_slice * obs.horizon * 1e-12)
+        behind = obs.remaining > schedule_remaining + tolerance
+        first_window = math.ceil(0.70 * obs.horizon) - 1
+        second_window = math.ceil(0.85 * obs.horizon) - 1
+        final_window = math.ceil(0.95 * obs.horizon) - 1
+        if not behind:
+            return "on_schedule", [0], False
+        if obs.t < first_window:
+            reference_stage = "before_reference_step_42"
+        elif obs.t < second_window:
+            reference_stage = "reference_steps_42_50"
+        elif obs.t < final_window:
+            reference_stage = "reference_steps_51_56"
+        else:
+            reference_stage = "reference_steps_57_60"
+        # The windows shown in the original C design are reference nodes, not
+        # hard-coded triggers. Once behind schedule, the learned policy may
+        # wait or select any of the three measures; it learns timing from t.
+        return reference_stage, [0, 1, 2, 3], True
+
+    def state_key(self, obs: Observation) -> tuple[int, ...]:
+        steps_left = max(obs.horizon - obs.t, 1)
+        pace_ratio = obs.remaining / max(obs.base_slice * steps_left, 1.0)
+        pace_bin = sum(pace_ratio >= cut for cut in (1.05, 1.20, 1.50, 2.00))
+        deviation_bps = (obs.mid / obs.initial_mid - 1.0) * 10_000.0
+        price_bin = 0 if deviation_bps < -2.0 else 1 if deviation_bps <= 2.0 else 2
+        opponent_ratio = obs.opponent_previous_qty / max(obs.base_slice, 1.0)
+        opponent_bin = int(opponent_ratio >= 1.0)
+        if obs.open_order_qty <= 1e-9:
+            order_bin = 0
+        elif obs.order_age_steps < 2 and obs.queue_ahead < obs.base_slice:
+            order_bin = 1
+        else:
+            order_bin = 2
+        return obs.t, pace_bin, price_bin, order_bin, opponent_bin
+
+    def select(self, obs: Observation, rng: random.Random, epsilon: float,
+               training: bool) -> int:
+        _, allowed, _ = self.stage_and_actions(obs)
+        if len(allowed) == 1:
+            return 0
+        state = self.state_key(obs)
+        if training:
+            values = self.q.setdefault(state, [0.0] * len(self.action_names))
+            visits = self.action_visits.setdefault(state, [0] * len(self.action_names))
+        else:
+            values = self.q.get(state, [0.0] * len(self.action_names))
+            visits = self.action_visits.get(state, [0] * len(self.action_names))
+        if training and epsilon > 0 and rng.random() < epsilon:
+            return rng.choice(allowed)
+        tried = [idx for idx in allowed if visits[idx] > 0]
+        if not tried:
+            return rng.choice(allowed) if training else 0
+        best = max(values[idx] for idx in tried)
+        return rng.choice([idx for idx in tried if abs(values[idx] - best) < 1e-12])
+
+    def update(self, obs: Observation, action: int, reward: float,
+               next_obs: Observation | None) -> None:
+        if self.frozen:
+            raise RuntimeError("Cannot update a frozen Scheme C policy")
+        state = self.state_key(obs)
+        current = self.q.setdefault(state, [0.0] * len(self.action_names))
+        visits = self.action_visits.setdefault(state, [0] * len(self.action_names))
+        visits[action] += 1
+        if next_obs is None:
+            future = 0.0
+        else:
+            next_state = self.state_key(next_obs)
+            next_allowed = self.stage_and_actions(next_obs)[1]
+            next_values = self.q.get(next_state, [0.0] * len(self.action_names))
+            next_visits = self.action_visits.get(next_state, [0] * len(self.action_names))
+            tried = [idx for idx in next_allowed if next_visits[idx] > 0]
+            future = max((next_values[idx] for idx in tried), default=0.0)
+        target = reward + self.config.discount * future
+        current[action] += self.config.learning_rate * (target - current[action])

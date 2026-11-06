@@ -1,0 +1,115 @@
+{
+  "created_utc": "2026-11-06T11:52:02.225632+00:00",
+  "script": "run_advanced_self_play.py",
+  "script_sha256": "d3caa5c1d02f184bf12199e64016b125a57f0fc4c1e646054f9860b71bbf580a",
+  "shared_qlearning_core_sha256": "0aae1a11da41becd52f2bb6b17c87aa0cc065eddda91d17eead2c54e50c798dd",
+  "schedule_aware_q_sha256": "c316d24e1a156e63bb61988e39041630c11327f42dbf4818121b83fa6a37cc1f",
+  "limit_order_book_sha256": "5cbecc1ea80775687bd20ad497c82498079be1f99e5eceb587ced0698749bdbc",
+  "parameters": {
+    "episodes": 500,
+    "training_runs": 5,
+    "eval_seeds": 30,
+    "checkpoint_interval": 100,
+    "fee_bps": 30.0,
+    "schedule_deficit_penalty_bps": 10.0,
+    "terminal_unfilled_penalty_bps": 1000.0,
+    "deadline_c_mode": "learned",
+    "seed": 20261107,
+    "output_dir": "outputs/advanced_self_play_learned_c_500x5x30"
+  },
+  "config": {
+    "window_minutes": 30,
+    "step_seconds": 30,
+    "order_size": 100000.0,
+    "initial_price": 100.0,
+    "half_spread_bps": 2.0,
+    "volatility_bps": 2.5,
+    "temporary_impact_bps_per_slice": 0.35,
+    "permanent_impact_bps_per_slice": 0.2,
+    "market_impact_multiplier": 1.0,
+    "opponent_impact_multiplier": 1.0,
+    "inventory_risk_weight": 0.0,
+    "schedule_deficit_penalty_bps": 10.0,
+    "terminal_unfilled_penalty_bps": 1000.0,
+    "learning_rate": 0.15,
+    "discount": 0.98,
+    "epsilon_start": 0.35,
+    "epsilon_end": 0.05,
+    "horizon_steps": 60,
+    "training_scenarios": [
+      "normal"
+    ],
+    "evaluation_scenarios": {
+      "normal": 1.0,
+      "high_volatility": 2.0
+    }
+  },
+  "method": {
+    "research_route": "Route A: simultaneous two-sided Independent Q-learning; rule-guided Double Q against fixed opponents is a separately reported Route B extension",
+    "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+    "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
+    "state_encoding": "schedule_aware_limit_order_v2",
+    "reward_alignment": "implementation shortfall on actual fills; per-step penalty for schedule deficit; terminal residual penalty applies to unfilled shares in none mode or backstop shares in autonomous mode; the terminal penalty is a learning signal, not economic cost",
+    "untried_action_bootstrap": "only tried actions are included; default autonomous mode has no intraday execution overlay",
+    "simultaneous_action_and_update": true,
+    "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",
+    "submission_vs_execution": "submitted child quantity is not treated as filled; parent inventory falls only by matched execution quantity",
+    "completion_mode": "autonomous",
+    "deadline_c_mode": "learned",
+    "deadline_c_integration": "a separate exact-time tabular Q head learns no-C, IOC+1, IOC+3, or IOC+6 at any lagging decision step; the regular Q agent learns order placement simultaneously using the resulting shared execution reward",
+    "deadline_c_policy": {
+      "decision_owner": "learned SchemeCDecisionPolicy Q head; not a fixed calendar trigger",
+      "activation": "available at every time step only when remaining inventory exceeds the linear remaining-time target including the current step",
+      "state": "exact time step, remaining-inventory-to-schedule ratio bin, price-deviation bin, own resting-order state, and previous opponent fill bin",
+      "actions": {
+        "0": "no C intervention; ordinary Q-selected action executes",
+        "1": "raise action floor to IOC and add 1 tick above the ordinary IOC quote",
+        "2": "raise action floor to IOC and add 3 ticks above the ordinary IOC quote",
+        "3": "raise action floor to IOC and add 6 ticks above the ordinary IOC quote"
+      },
+      "reference_elapsed_time_nodes": {
+        "step_42": "20m30s; analysis marker only",
+        "step_51": "25m00s; analysis marker only",
+        "step_57": "28m00s; analysis marker only"
+      },
+      "learning": "the separate C-Q head is updated from the same realized per-step execution reward as the order-placement Q head; exploration uses the run epsilon",
+      "c_head_state_encoding": "schedule_aware_limit_order_v2+scheme_c_meta_exact_time_v1",
+      "terminal_completion": "the learned C policy reduces residual through ordinary order-book executions but does not guarantee completion; autonomous mode still uses a separately counted terminal backstop"
+    },
+    "completion_constraint": "hard completion by a synthetic market-on-close backstop; Q-learning controls all intraday actions and residual quantity is filled at an impact-stressed average price",
+    "terminal_backstop_price": "half-spread + tick_bps*sqrt(forced_qty/base_slice) + temporary_impact_bps_per_slice*market_impact_multiplier*step_minutes*(forced_qty/base_slice)",
+    "limit_order_parameters": {
+      "tick_bps": 1.0,
+      "quote_ttl_steps": 4,
+      "passive_queue_mean_base_slices": [
+        0.12,
+        0.65,
+        1.1
+      ],
+      "sell_market_events_per_step": 1.5,
+      "sell_order_mean_base_slices": 0.7,
+      "sell_order_log_sigma": 0.55,
+      "ask_depth_mean_base_slices": [
+        0.8,
+        0.55,
+        0.4,
+        0.3,
+        0.22,
+        0.16,
+        0.12
+      ],
+      "ask_depth_log_sigma": 0.35
+    },
+    "fee_economic_interpretation": "30 bp one-way = 0.3% of traded notional",
+    "checkpoint_evaluation": "frozen cross-play on paired seeds",
+    "candidate_best_response": "minimum own cost among saved checkpoints against fixed opponent checkpoint",
+    "claim_boundary": "candidate-set responses are not global optima or Nash equilibria"
+  },
+  "counts": {
+    "training_episode_rows": 2500,
+    "cross_play_rows": 10800,
+    "cross_play_summary_rows": 360,
+    "checkpoint_count_per_run": 6
+  },
+  "elapsed_seconds": 266.468
+}

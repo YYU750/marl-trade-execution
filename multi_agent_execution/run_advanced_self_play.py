@@ -70,8 +70,8 @@ def parse_args() -> argparse.Namespace:
         help="terminal learning penalty per full-order fraction left unfilled or sent to the backstop",
     )
     parser.add_argument(
-        "--deadline-c-mode", choices=("none", "stochastic"), default="none",
-        help="optionally integrate a stochastic, schedule-aware C action component into Q-agent decisions",
+        "--deadline-c-mode", choices=("none", "stochastic", "learned"), default="none",
+        help="none=ordinary Q actions; stochastic=randomized C; learned=Q agent learns C timing and measure",
     )
     parser.add_argument("--seed", type=int, default=20261103)
     parser.add_argument(
@@ -91,9 +91,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("completion penalty coefficients cannot be negative")
     if args.output_dir is None:
         if args.completion_mode == "autonomous":
-            suffix = "autonomous_stochastic_c" if args.deadline_c_mode == "stochastic" else "autonomous_completion"
+            suffix = ("autonomous_learned_c" if args.deadline_c_mode == "learned" else
+                      "autonomous_stochastic_c" if args.deadline_c_mode == "stochastic" else
+                      "autonomous_completion")
         else:
-            suffix = "no_completion_stochastic_c" if args.deadline_c_mode == "stochastic" else "no_completion"
+            suffix = ("no_completion_learned_c" if args.deadline_c_mode == "learned" else
+                      "no_completion_stochastic_c" if args.deadline_c_mode == "stochastic" else
+                      "no_completion")
         args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}"
     return args
 
@@ -114,7 +118,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def qtable_to_json(agent: QLearningAgent) -> dict[str, Any]:
-    return {
+    payload = {
         "opponent_aware": agent.opponent_aware,
         "state_encoding": getattr(agent, "state_encoding", "exact_time_inventory_price_opponent_v0"),
         "q": {"|".join(map(str, state)): values for state, values in agent.q.items()},
@@ -122,10 +126,19 @@ def qtable_to_json(agent: QLearningAgent) -> dict[str, Any]:
             "|".join(map(str, state)): counts for state, counts in agent.action_visits.items()
         },
     }
+    if hasattr(agent, "scheme_c"):
+        payload["scheme_c_policy"] = {
+            "state_encoding": agent.scheme_c.state_encoding,
+            "q": {"|".join(map(str, state)): values
+                  for state, values in agent.scheme_c.q.items()},
+            "action_visits": {"|".join(map(str, state)): counts
+                              for state, counts in agent.scheme_c.action_visits.items()},
+        }
+    return payload
 
 
 def snapshot_to_json(snap: dict[str, Any]) -> dict[str, Any]:
-    return {
+    payload = {
         "state_encoding": snap["state_encoding"],
         "visited_state_count": snap["visited_state_count"],
         "q": {"|".join(map(str, state)): values for state, values in snap["q"].items()},
@@ -133,15 +146,31 @@ def snapshot_to_json(snap: dict[str, Any]) -> dict[str, Any]:
             "|".join(map(str, state)): counts for state, counts in snap["visits"].items()
         },
     }
+    if "scheme_c" in snap:
+        payload["scheme_c_policy"] = {
+            "state_encoding": snap["scheme_c"]["state_encoding"],
+            "q": {"|".join(map(str, state)): values
+                  for state, values in snap["scheme_c"]["q"].items()},
+            "action_visits": {"|".join(map(str, state)): counts
+                              for state, counts in snap["scheme_c"]["visits"].items()},
+        }
+    return payload
 
 
 def snapshot(agent: QLearningAgent) -> dict[str, Any]:
-    return {
+    payload = {
         "state_encoding": getattr(agent, "state_encoding", "unknown"),
         "q": {state: values[:] for state, values in agent.q.items()},
         "visits": {state: counts[:] for state, counts in agent.action_visits.items()},
         "visited_state_count": len(agent.visited),
     }
+    if hasattr(agent, "scheme_c"):
+        payload["scheme_c"] = {
+            "state_encoding": agent.scheme_c.state_encoding,
+            "q": {state: values[:] for state, values in agent.scheme_c.q.items()},
+            "visits": {state: counts[:] for state, counts in agent.scheme_c.action_visits.items()},
+        }
+    return payload
 
 
 def frozen_action(agent: QLearningAgent, obs: Any, rng: random.Random) -> int:
@@ -231,8 +260,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     """Run one synchronous episode with event-based limit-order execution."""
     if completion_mode not in {"autonomous", "none"}:
         raise ValueError("completion_mode must be 'autonomous' or 'none'")
-    if deadline_c_mode not in {"none", "deterministic", "stochastic"}:
-        raise ValueError("deadline_c_mode must be 'none', 'deterministic', or 'stochastic'")
+    if deadline_c_mode not in {"none", "deterministic", "stochastic", "learned"}:
+        raise ValueError("deadline_c_mode must be 'none', 'deterministic', 'stochastic', or 'learned'")
     if deadline_c_mode == "deterministic" and training:
         raise ValueError("Deterministic C is evaluation-only; use stochastic C to train the integrated policy")
     rng_a = random.Random(seed ^ 0x13579BDF)
@@ -256,6 +285,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     deadline_urgency_steps = {"A": 0, "B": 0}
     deadline_action_overrides = {"A": 0, "B": 0}
     deadline_c_interventions = {"A": 0, "B": 0}
+    deadline_c_action_counts = {"A": Counter(), "B": Counter()}
     gross_cash = {"A": 0.0, "B": 0.0}
     fee_cash = {"A": 0.0, "B": 0.0}
     prev_qty = {"A": 0.0, "B": 0.0}
@@ -267,6 +297,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     c_rngs = {
         "A": random.Random(seed ^ 0x57C011A1),
         "B": random.Random(seed ^ 0x57C022B2),
+    }
+    c_meta_rngs = {
+        "A": random.Random(seed ^ 0x57C033C3),
+        "B": random.Random(seed ^ 0x57C044D4),
     }
     c_random_draws = {
         name: [tuple(c_rngs[name].random() for _ in range(4))
@@ -328,6 +362,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         c_intervened: dict[str, bool] = {"A": False, "B": False}
         c_probability: dict[str, float] = {"A": 0.0, "B": 0.0}
         c_quantity_fraction: dict[str, float] = {"A": 0.0, "B": 0.0}
+        c_decision_idx: dict[str, int] = {"A": 0, "B": 0}
         for name in ("A", "B"):
             if training:
                 proposed_action_idx[name] = agents[name].select(
@@ -335,7 +370,19 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 )
             else:
                 proposed_action_idx[name] = frozen_action(agents[name], observations[name], rngs[name])
-            if deadline_c_mode != "none":
+            if deadline_c_mode == "learned":
+                stage, _, behind = agents[name].scheme_c.stage_and_actions(observations[name])
+                urgency_stage[name] = stage
+                if behind:
+                    deadline_urgency_steps[name] += 1
+                c_decision_idx[name] = agents[name].scheme_c.select(
+                    observations[name], c_meta_rngs[name], epsilon, training,
+                )
+                if c_decision_idx[name] > 0:
+                    action_floor[name] = 4
+                    urgency_ticks[name] = agents[name].scheme_c.quote_ticks[c_decision_idx[name]]
+                    c_intervened[name] = True
+            elif deadline_c_mode != "none":
                 rule_floor, rule_ticks, urgency_stage[name] = deadline_urgency(
                     t, config.horizon, remaining[name], config.order_size,
                 )
@@ -363,6 +410,15 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 deadline_action_overrides[name] += 1
             if c_intervened[name]:
                 deadline_c_interventions[name] += 1
+            c_action_label = (
+                "on_schedule" if deadline_c_mode == "learned" and urgency_stage[name] == "on_schedule" else
+                agents[name].scheme_c.action_names[c_decision_idx[name]]
+                if deadline_c_mode == "learned" else
+                "random_c" if c_intervened[name] and deadline_c_mode == "stochastic" else
+                "deterministic_c" if c_intervened[name] and deadline_c_mode == "deterministic" else
+                "no_c"
+            )
+            deadline_c_action_counts[name][c_action_label] += 1
 
         submitted_this_step = {"A": 0.0, "B": 0.0}
         policy_action_qty = {"A": 0.0, "B": 0.0}
@@ -574,6 +630,13 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 update_diagnostics[name] = agents[name].update(
                     observations[name], action_idx[name], learning_rewards[name],
                     next_observations[name]) or {}
+                if deadline_c_mode == "learned":
+                    _, c_allowed, _ = agents[name].scheme_c.stage_and_actions(observations[name])
+                    if len(c_allowed) > 1:
+                        agents[name].scheme_c.update(
+                            observations[name], c_decision_idx[name], learning_rewards[name],
+                            next_observations[name],
+                        )
         if trace_rows is not None:
             for name in ("A", "B"):
                 opponent_name = "B" if name == "A" else "A"
@@ -598,6 +661,20 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                     "action": ACTION_NAMES[action_idx[name]],
                     "action_multiplier": ACTIONS[action_idx[name]],
                     "deadline_c_mode": deadline_c_mode,
+                    "deadline_c_decision": c_action_label,
+                    "deadline_c_decision_available": (
+                        deadline_c_mode == "learned" and urgency_stage[name] != "on_schedule"
+                    ),
+                    "deadline_c_state_key": (
+                        "|".join(map(str, agents[name].scheme_c.state_key(observations[name])))
+                        if deadline_c_mode == "learned" else None
+                    ),
+                    "deadline_c_q_values": (
+                        json.dumps(agents[name].scheme_c.q.get(
+                            agents[name].scheme_c.state_key(observations[name]),
+                            [0.0] * len(agents[name].scheme_c.action_names),
+                        )) if deadline_c_mode == "learned" else None
+                    ),
                     "deadline_c_intervened": c_intervened[name],
                     "deadline_c_probability": c_probability[name],
                     "deadline_catch_up_fraction": c_quantity_fraction[name],
@@ -700,6 +777,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         "deadline_action_overrides_B": deadline_action_overrides["B"],
         "deadline_c_interventions_A": deadline_c_interventions["A"],
         "deadline_c_interventions_B": deadline_c_interventions["B"],
+        "deadline_c_actions_A": json.dumps(dict(deadline_c_action_counts["A"]), ensure_ascii=False, sort_keys=True),
+        "deadline_c_actions_B": json.dumps(dict(deadline_c_action_counts["B"]), ensure_ascii=False, sort_keys=True),
         "schedule_deficit_penalty_A_bps": schedule_deficit_penalty_total["A"],
         "schedule_deficit_penalty_B_bps": schedule_deficit_penalty_total["B"],
         "terminal_residual_penalty_A_bps": terminal_residual_penalty_total["A"],
@@ -792,6 +871,8 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
             "B_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_B_bps"],
             "A_deadline_c_interventions": result["deadline_c_interventions_A"],
             "B_deadline_c_interventions": result["deadline_c_interventions_B"],
+            "A_deadline_c_actions": result["deadline_c_actions_A"],
+            "B_deadline_c_actions": result["deadline_c_actions_B"],
             "A_schedule_deficit_penalty_bps": result["schedule_deficit_penalty_A_bps"],
             "B_schedule_deficit_penalty_bps": result["schedule_deficit_penalty_B_bps"],
             "A_terminal_residual_penalty_bps": result["terminal_residual_penalty_A_bps"],
@@ -820,6 +901,12 @@ def instantiate_snapshot(config: Config, snap: dict[str, Any]) -> QLearningAgent
     agent = LimitOrderAwareQLearningAgent(config, opponent_aware=True)
     agent.q = {state: values[:] for state, values in snap["q"].items()}
     agent.action_visits = {state: counts[:] for state, counts in snap["visits"].items()}
+    c_snap = snap.get("scheme_c")
+    if c_snap is not None:
+        agent.scheme_c.q = {state: values[:] for state, values in c_snap["q"].items()}
+        agent.scheme_c.action_visits = {
+            state: counts[:] for state, counts in c_snap["visits"].items()
+        }
     agent.freeze()
     return agent
 
@@ -865,6 +952,8 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                         "deadline_c_mode": args.deadline_c_mode,
                         "deadline_c_interventions_A": result["deadline_c_interventions_A"],
                         "deadline_c_interventions_B": result["deadline_c_interventions_B"],
+                        "deadline_c_actions_A": result["deadline_c_actions_A"],
+                        "deadline_c_actions_B": result["deadline_c_actions_B"],
                         "cancelled_A": result["cancelled_A"], "cancelled_B": result["cancelled_B"],
                         "reward_A": result["reward_A"], "reward_B": result["reward_B"],
                         "actions_A": result["actions_A"], "actions_B": result["actions_B"],
@@ -903,6 +992,8 @@ def summarize_cross_play(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             "B_taker_fills_mean": statistics.fmean(r["taker_fills_B"] for r in group),
             "A_forced_completion_mean": statistics.fmean(r["forced_completion_A"] for r in group),
             "B_forced_completion_mean": statistics.fmean(r["forced_completion_B"] for r in group),
+            "A_c_interventions_mean": statistics.fmean(r["deadline_c_interventions_A"] for r in group),
+            "B_c_interventions_mean": statistics.fmean(r["deadline_c_interventions_B"] for r in group),
             "A_forced_completion_cost_contribution_mean_bps": statistics.fmean(r["forced_completion_cost_contribution_A_bps"] for r in group),
             "B_forced_completion_cost_contribution_mean_bps": statistics.fmean(r["forced_completion_cost_contribution_B_bps"] for r in group),
             "A_schedule_deficit_penalty_mean_bps": statistics.fmean(r["schedule_deficit_penalty_A_bps"] for r in group),
@@ -991,7 +1082,14 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                   diagnostics: list[dict[str, Any]]) -> str:
     final_episode = args.episodes
     if args.completion_mode == "autonomous":
-        if args.deadline_c_mode == "stochastic":
+        if args.deadline_c_mode == "learned":
+            mode_note = (
+                "- 盘中策略：Q-learning Agent 与独立 C 决策头共同学习。每个时间步若落后线性进度，C 决策头按精确时间、缺口、价格、挂单和对手近期成交状态选择暂不加急、IOC+1、IOC+3 或 IOC+6；"
+                "42、51、57 步（约 20 分 30 秒、25 分钟、28 分钟）只是分析参照，Agent 可在任一落后时间点启动或等待。普通撮合后，终端兜底仅处理剩余母单。"
+            )
+            mode_label = "双边 Q-learning + 学习型 C 决策 + 终端完单兜底"
+            output_path = "outputs/advanced_self_play_autonomous_learned_c"
+        elif args.deadline_c_mode == "stochastic":
             mode_note = (
                 "- 盘中策略：Q-learning Agent 先自主选动作；当进度落后时，随机 C 决策按阶段概率抽取动作下限、报价加价档和追赶数量比例；"
                 "Q 表按最终实际执行的动作更新。收盘兜底只负责剩余未成交量，兜底量和成本单独报告。"
@@ -1140,6 +1238,7 @@ def main() -> None:
                        "fee_bps": args.fee_bps,
                        "schedule_deficit_penalty_bps": args.schedule_deficit_penalty_bps,
                        "terminal_unfilled_penalty_bps": args.terminal_unfilled_penalty_bps,
+                       "deadline_c_mode": args.deadline_c_mode,
                        "seed": args.seed,
                        "output_dir": output_dir_record},
         "config": {**asdict(config), "horizon_steps": config.horizon,
@@ -1151,18 +1250,38 @@ def main() -> None:
             "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "state_encoding": LimitOrderAwareQLearningAgent.state_encoding,
             "reward_alignment": "implementation shortfall on actual fills; per-step penalty for schedule deficit; terminal residual penalty applies to unfilled shares in none mode or backstop shares in autonomous mode; the terminal penalty is a learning signal, not economic cost",
-            "untried_action_bootstrap": "only tried actions are included; default autonomous mode has no intraday execution overlay",
+            "untried_action_bootstrap": "only tried actions are included in next-state bootstrap; learned Scheme C maintains a separate Q table and action visitation counts",
             "simultaneous_action_and_update": True,
             "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",
             "submission_vs_execution": "submitted child quantity is not treated as filled; parent inventory falls only by matched execution quantity",
             "completion_mode": args.completion_mode,
             "deadline_c_mode": args.deadline_c_mode,
             "deadline_c_integration": (
+                "a separate exact-time tabular Q head learns no-C, IOC+1, IOC+3, or IOC+6 at any lagging decision step; the regular Q agent learns order placement simultaneously using the resulting shared execution reward"
+                if args.deadline_c_mode == "learned" else
                 "stochastic C perturbations participate in the Q behavior policy; the Q update uses the final action index executed"
                 if args.deadline_c_mode == "stochastic" else
                 "disabled; Q-learning actions are used directly"
             ),
             "deadline_c_policy": ({
+                "decision_owner": "learned SchemeCDecisionPolicy Q head; not a fixed calendar trigger",
+                "activation": "available at every time step only when remaining inventory exceeds the linear remaining-time target including the current step",
+                "state": "exact time step, remaining-inventory-to-schedule ratio bin, price-deviation bin, own resting-order state, and previous opponent fill bin",
+                "actions": {
+                    "0": "no C intervention; ordinary Q-selected action executes",
+                    "1": "raise action floor to IOC and add 1 tick above the ordinary IOC quote",
+                    "2": "raise action floor to IOC and add 3 ticks above the ordinary IOC quote",
+                    "3": "raise action floor to IOC and add 6 ticks above the ordinary IOC quote",
+                },
+                "reference_elapsed_time_nodes": {
+                    "step_42": "20m30s; analysis marker only",
+                    "step_51": "25m00s; analysis marker only",
+                    "step_57": "28m00s; analysis marker only",
+                },
+                "learning": "the separate C-Q head is updated from the same realized per-step execution reward as the order-placement Q head; exploration uses the run epsilon",
+                "c_head_state_encoding": LimitOrderAwareQLearningAgent.state_encoding + "+scheme_c_meta_exact_time_v1",
+                "terminal_completion": "the learned C policy reduces residual through ordinary order-book executions but does not guarantee completion; autonomous mode still uses a separately counted terminal backstop",
+            } if args.deadline_c_mode == "learned" else {
                 "activation": "only when behind the post-decision linear schedule",
                 "base_probability_by_stage": {
                     "early_autonomous_window": 0.12,

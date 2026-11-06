@@ -1,12 +1,12 @@
-"""Paired evaluation of the historical Scheme C deadline overlay.
+"""Paired evaluation of fixed, randomized, and learned Scheme C policies.
 
-The Q-learning checkpoints are trained without C. This script freezes the
-same final A/B checkpoints and compares pure policy execution with the
-evaluation-only C urgency overlay on identical market seeds.
+This script freezes the selected A/B checkpoints and compares pure policy
+execution with fixed, randomized, and learned C policies on identical seeds.
 """
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import statistics
 from pathlib import Path
@@ -19,13 +19,13 @@ from schedule_aware_q import LimitOrderAwareQLearningAgent
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_CHECKPOINT_DIR = ROOT / "outputs" / "advanced_self_play_autonomous_completion"
-DEFAULT_OUTPUT_DIR = ROOT / "outputs" / "c_overlay_comparison_with_stochastic_c"
+DEFAULT_CHECKPOINT_DIR = ROOT / "outputs" / "advanced_self_play_autonomous_learned_c"
+DEFAULT_OUTPUT_DIR = ROOT / "outputs" / "c_overlay_comparison_with_learned_c"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare the current frozen Q policies with and without the historical C deadline overlay."
+        description="Compare frozen learned-Q policies with pure Q, rule C, random C, and learned C."
     )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint", type=int, default=500)
@@ -60,6 +60,21 @@ def load_frozen_agent(config: Config, payload: dict[str, Any]) -> LimitOrderAwar
         tuple(int(value) for value in state.split("|")): [int(count) for count in counts]
         for state, counts in payload["action_visits"].items()
     }
+    c_policy = payload.get("scheme_c_policy")
+    if c_policy is not None:
+        if c_policy.get("state_encoding") != agent.scheme_c.state_encoding:
+            raise ValueError(
+                "Checkpoint Scheme C state encoding does not match the current policy: "
+                f"{c_policy.get('state_encoding')!r}"
+            )
+        agent.scheme_c.q = {
+            tuple(int(value) for value in state.split("|")): [float(q) for q in values]
+            for state, values in c_policy.get("q", {}).items()
+        }
+        agent.scheme_c.action_visits = {
+            tuple(int(value) for value in state.split("|")): [int(count) for count in counts]
+            for state, counts in c_policy.get("action_visits", {}).items()
+        }
     agent.freeze()
     return agent
 
@@ -92,6 +107,7 @@ def run_comparison(args: argparse.Namespace, config: Config) -> list[dict[str, A
                     ("agent_only", "none"),
                     ("scheme_c", "deterministic"),
                     ("stochastic_c", "stochastic"),
+                    ("learned_c", "learned"),
                 ):
                     result = episode(
                         agents["A"], agents["B"], config, seed, args.fee_bps,
@@ -121,6 +137,8 @@ def run_comparison(args: argparse.Namespace, config: Config) -> list[dict[str, A
                         "B_deadline_action_overrides": result["deadline_action_overrides_B"],
                         "A_c_interventions": result["deadline_c_interventions_A"],
                         "B_c_interventions": result["deadline_c_interventions_B"],
+                        "A_c_actions": result["deadline_c_actions_A"],
+                        "B_c_actions": result["deadline_c_actions_B"],
                         "A_schedule_penalty_bps": result["schedule_deficit_penalty_A_bps"],
                         "B_schedule_penalty_bps": result["schedule_deficit_penalty_B_bps"],
                         "A_terminal_penalty_bps": result["terminal_residual_penalty_A_bps"],
@@ -133,9 +151,9 @@ def summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[di
     summaries: list[dict[str, Any]] = []
     paired: list[dict[str, Any]] = []
     for scenario, _ in SCENARIOS:
-        for overlay in ("agent_only", "scheme_c", "stochastic_c"):
+        for overlay in ("agent_only", "scheme_c", "stochastic_c", "learned_c"):
             group = [r for r in rows if r["scenario"] == scenario and r["execution_overlay"] == overlay]
-            summaries.append({
+            summary = {
                 "scenario": scenario,
                 "execution_overlay": overlay,
                 "episodes": len(group),
@@ -155,10 +173,17 @@ def summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[di
                 "B_action_overrides_mean": statistics.fmean(r["B_deadline_action_overrides"] for r in group),
                 "A_c_interventions_mean": statistics.fmean(r["A_c_interventions"] for r in group),
                 "B_c_interventions_mean": statistics.fmean(r["B_c_interventions"] for r in group),
-            })
-        # Pair both C variants against the identical pure-agent seed.
+            }
+            for side in ("A", "B"):
+                action_counts: Counter[str] = Counter()
+                for row in group:
+                    action_counts.update(json.loads(row[f"{side}_c_actions"]))
+                for label in ("no_c", "ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks"):
+                    summary[f"{side}_{label}_per_episode"] = action_counts[label] / len(group)
+            summaries.append(summary)
+        # Pair each C variant against the identical pure-agent seed.
         for run_id in sorted({r["training_run"] for r in rows}):
-            for variant in ("scheme_c", "stochastic_c"):
+            for variant in ("scheme_c", "stochastic_c", "learned_c"):
                 c_rows = [r for r in rows if r["scenario"] == scenario
                           and r["training_run"] == run_id and r["execution_overlay"] == variant]
                 for c_row in c_rows:
@@ -187,16 +212,16 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         "# 方案 C 截止加急：配对评估记录", "",
         f"- Q 检查点：第 {args.checkpoint} 回合；来自逐步进度惩罚与终局残余惩罚训练的当前双边模型。",
         f"- 每个场景：{args.training_runs} 个训练运行 × {args.eval_seeds} 个配对随机种子；单边手续费 {args.fee_bps:g} bp。",
-        "- 比较对象：同一组冻结 A/B Q 表、同一市场路径下的纯 Agent、确定性 C 和随机 C；三组均保留第 60 步环境兜底。",
+        "- 比较对象：同一组冻结 A/B 检查点、同一市场随机种子下的纯 Agent、确定性 C、随机 C 和学习型 C；所有方式均保留第 60 步环境兜底。",
         "- 确定性 C 保留旧版 70%、85%、95% 截止加急逻辑。随机 C 从落后进度时即可低概率介入，离截止越近且缺口越大，介入概率越高；每次介入再随机抽取动作下限、报价加价档和追赶数量比例，前段偏被动、后段逐步提高成交确定性。",
-        "- 本脚本属于冻结策略的评估期覆盖；Q 表不更新。随机 C 参与训练的结果须另行比较。", "",
+        "- 学习型 C 检查点必须包含已训练的独立 C-Q 表。本脚本属于冻结策略的评估期对照；Q 表和 C-Q 表均不更新。", "",
         "## 平均结果", "",
         "兜底量越低表示普通限价撮合中的自主成交越多；经济成本包含实际成交、手续费及冲击，不含学习惩罚。", "",
-              "| 场景 | 执行方式 | A 兜底股数 | B 兜底股数 | A 成本 (bp) | B 成本 (bp) | 完成率 A/B | A/B 落后进度步数 | A/B 动作上调步数 | A/B 随机C介入步数 |",
+        "| 场景 | 执行方式 | A 兜底股数 | B 兜底股数 | A 成本 (bp) | B 成本 (bp) | 完成率 A/B | A/B 落后进度步数 | A/B 动作上调步数 | A/B C介入步数 |",
         "|---|---|---:|---:|---:|---:|---|---:|---:|---:|",
     ]
     for scenario, _ in SCENARIOS:
-        for overlay in ("agent_only", "scheme_c", "stochastic_c"):
+        for overlay in ("agent_only", "scheme_c", "stochastic_c", "learned_c"):
             row = next(r for r in summaries if r["scenario"] == scenario and r["execution_overlay"] == overlay)
             lines.append(
                 f"| {scenario} | {overlay} | {row['A_forced_completion_mean']:.0f} | "
@@ -210,7 +235,7 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               "差值定义为对应 C 版本 − 纯 Agent；兜底股数与成本差值小于零分别表示减少兜底量或降低成本。", "",
               "| 场景 | C 版本 | A 兜底量差 | B 兜底量差 | A 成本差 (bp) | B 成本差 (bp) |", "|---|---|---:|---:|---:|---:|"]
     for scenario, _ in SCENARIOS:
-        for variant in ("scheme_c", "stochastic_c"):
+        for variant in ("scheme_c", "stochastic_c", "learned_c"):
             group = [r for r in paired if r["scenario"] == scenario and r["execution_overlay"] == variant]
             lines.append(
                 f"| {scenario} | {variant} | {statistics.fmean(r['A_forced_delta_c_minus_agent'] for r in group):.0f} | "
@@ -218,8 +243,17 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                 f"{statistics.fmean(r['A_cost_delta_c_minus_agent_bps'] for r in group):.3f} | "
                 f"{statistics.fmean(r['B_cost_delta_c_minus_agent_bps'] for r in group):.3f} |"
             )
+    learned = [r for r in summaries if r["execution_overlay"] == "learned_c"]
+    lines += ["", "## 学习型 C 的动作选择频数", "",
+              "下表为每个 60 步评估回合的平均决策次数。只统计当前库存落后线性剩余时间计划时开放的决策；按时状态记作 on-schedule，不计入下表。", "",
+              "| 场景 | Agent | no-C | IOC+1 tick | IOC+3 ticks | IOC+6 ticks |", "|---|---|---:|---:|---:|---:|"]
+    for row in learned:
+        for side in ("A", "B"):
+            counts = [row[f"{side}_{label}_per_episode"] for label in
+                      ("no_c", "ioc_plus_1_tick", "ioc_plus_3_ticks", "ioc_plus_6_ticks")]
+            lines.append(f"| {row['scenario']} | {side} | " + " | ".join(f"{v:.1f}" for v in counts) + " |")
     lines += ["", "## 解释边界", "",
-              "本试验冻结相同 Q 检查点，比较纯 Agent、确定性 C 和随机 C；随机 C 在进度落后时以进度阶段和缺口大小决定介入概率，再抽取动作档位、报价加价档和追赶数量比例。该表仍是评估期对照，Q 表不更新；另需与随机 C 参与训练的 Q 模型分开报告。所有结果来自合成订单簿；100% 完成仍由终端兜底保证。", "",
+              "本试验冻结相同 A/B 检查点，比较纯 Agent、确定性 C、随机 C 与已训练的 C 决策头。随机 C 按进度阶段和缺口概率抽样；学习型 C 在任意决策步检测到进度落后时，由冻结的 C-Q 策略从 no-C、IOC+1、IOC+3、IOC+6 中择一。42、51、57 步（约 20 分 30 秒、25 分钟、28 分钟）只是解释策略的参考节点，不是触发门槛。评估不更新任何 Q 表。所有结果来自合成订单簿；100% 完成仍由终端兜底保证。", "",
               f"- 冻结策略来源：`{args.checkpoint_dir}`。",
               f"- 原始配对结果：`c_overlay_raw.csv`；配对差异：`c_overlay_paired_differences.csv`；汇总：`c_overlay_summary.csv`。"]
     return "\n".join(lines) + "\n"
@@ -231,6 +265,11 @@ def main() -> None:
     if not manifest_path.is_file():
         raise SystemExit(f"Checkpoint run manifest not found: {manifest_path}")
     source = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if source.get("parameters", {}).get("deadline_c_mode") != "learned":
+        raise SystemExit(
+            "The selected checkpoint directory was not trained with --deadline-c-mode learned; "
+            "use a learned-C training checkpoint so the learned_c arm has a trained C policy."
+        )
     trained = source.get("parameters", {})
     for key, current in (
         ("fee_bps", args.fee_bps),
@@ -272,6 +311,12 @@ def main() -> None:
             "quote_ttl_steps": SyntheticLOBConfig().quote_ttl_steps,
         },
         "deadline_c_policy": {
+            "mode": "learned exact-time Q head; decisions available on every step only if behind linear remaining-time target",
+            "actions": {"0": "no C", "1": "IOC plus 1 additional tick", "2": "IOC plus 3 additional ticks", "3": "IOC plus 6 additional ticks"},
+            "reference_nodes_only": {"step_42": "20m30s", "step_51": "25m00s", "step_57": "28m00s"},
+            "randomized_baseline_reference": "the legacy randomized C parameters are historical and are not used for the learned_c arm",
+        },
+        "legacy_randomized_c_reference": {
             "activation": "randomized when behind linear schedule; probability increases with deficit and deadline stage",
             "early_window": {"base_probability": 0.12, "action_floors": [1, 2, 3], "ticks": [0, 1], "catch_up_fraction": [0.10, 0.30]},
             "urgency_window": {"base_probability": 0.32, "action_floors": [2, 3, 4], "ticks": [0, 1, 2], "catch_up_fraction": [0.25, 0.55]},
@@ -294,7 +339,7 @@ def main() -> None:
             },
             "training_action_overrides": False,
         },
-        "comparison": "same frozen Q checkpoints and paired seeds; pure Q vs deterministic C vs randomized C evaluation overlays",
+        "comparison": "same frozen A/B checkpoint and paired market seeds; pure Q vs deterministic C vs randomized C vs learned C evaluation overlays",
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"C overlay comparison complete. Findings: {(args.output_dir / 'findings.md').resolve()}")
 

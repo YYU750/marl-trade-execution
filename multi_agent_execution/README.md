@@ -18,21 +18,27 @@ python .\run_experiment.py
 python .\run_advanced_self_play.py
 ```
 
-可用冻结的当前 Q 检查点单独评估方案 C 截止加急对兜底量的影响：
+训练 Agent 自主选择方案 C 的介入时机和措施：
 
 ```powershell
-python .\compare_deadline_c_overlay.py
+python .\run_experiment.py --deadline-c-mode learned --output-dir .\outputs\advanced_self_play_autonomous_learned_c
 ```
 
-该脚本在同一冻结检查点和配对随机种子上比较纯 Q、确定性 C 和随机 C，不改变策略训练；结果写入 `outputs/c_overlay_comparison_with_stochastic_c/`。
+学习型 C 使用独立 Q 决策头。在每个 30 秒决策步，只要剩余库存超过包括当前步在内的线性计划余额，Agent 就能选择不加急、IOC+1 tick、IOC+3 ticks 或 IOC+6 ticks。42、51、57 步对应的 20 分 30 秒、25 分钟和 28 分钟只是分析参照，不是硬触发点。状态包含准确时间、进度缺口、价格偏离、自身当前挂单及对手上一步成交；C 决策头和订单动作头共用本步已实现的学习奖励，但分别更新 Q 表。
 
-若希望把随机 C 直接纳入 A、B 的学习行为策略，可运行：
+有了学习型检查点后，可在同一冻结 A/B 检查点和配对随机种子下比较纯 Agent、确定性 C、随机 C 和学习型 C：
+
+```powershell
+python .\compare_deadline_c_overlay.py --checkpoint-dir .\outputs\advanced_self_play_autonomous_learned_c --output-dir .\outputs\c_overlay_comparison_with_learned_c
+```
+
+历史随机 C 实验仍可复现：
 
 ```powershell
 python .\run_experiment.py --deadline-c-mode stochastic --output-dir .\outputs\advanced_self_play_autonomous_stochastic_c
 ```
 
-此模式下 Agent 先按 Q 表提出动作；只有执行进度落后线性计划时，随机 C 才按阶段与缺口概率介入，并随机抽取动作下限、报价加价档和追赶数量比例。Q 表使用最终实际执行的动作更新。默认 `deadline-c-mode=none` 仍是纯 Q 自主决策，因此 C 训练结果保存在独立目录，不覆盖纯 Q 检查点。
+默认 `deadline-c-mode=none` 仍是纯 Q 自主决策。学习型 C 保存在独立输出目录，不覆盖纯 Q 检查点；终端兜底仍只在 60 步普通撮合结束后处理残余量，因此 C 能降低兜底量但不保证盘中全部成交。
 
 默认参数：
 
@@ -55,7 +61,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 试跑可确认代码、数据保存和统计链路可运行；小样本不能用来推断策略优劣或收敛。
 
-随机 C 的本次完整试跑及配对结果见[方案 C 随机介入与训练评估](./方案C兜底量配对评估.md)。
+学习型 C 的机制和结果见[方案 C 学习型决策头说明](./方案C学习型决策头说明.md)。历史随机 C 结果见[方案 C 随机介入与训练评估](./方案C兜底量配对评估.md)。
 
 ## 智能体和环境
 
