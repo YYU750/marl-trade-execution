@@ -67,6 +67,10 @@ class ScheduleAwareQLearningAgent(QLearningAgent):
         best = max(values[i] for i in tried)
         return rng.choice([i for i in tried if abs(values[i] - best) < 1e-12])
 
+    def minimum_next_action_index(self, obs: Observation) -> int:
+        """Legacy full-fill benchmark feasibility rule."""
+        return feasible_action_floor(obs, self.config)[1]
+
     def update(self, obs: Observation, action: int, reward: float,
                next_obs: Observation | None) -> dict[str, float | str | None]:
         if self.frozen:
@@ -81,7 +85,7 @@ class ScheduleAwareQLearningAgent(QLearningAgent):
             future = 0.0
         else:
             next_values = self.values(next_obs)
-            _, floor_index = feasible_action_floor(next_obs, self.config)
+            floor_index = self.minimum_next_action_index(next_obs)
             next_state = self.state_key(next_obs)
             next_visits = self.action_visits.get(next_state, [0] * len(ACTIONS))
             tried = [i for i in range(floor_index, len(ACTIONS)) if next_visits[i] > 0]
@@ -268,3 +272,57 @@ class ThresholdAlignedDoubleQAgent(ScheduleAwareQLearningAgent):
             self.config.horizon, self.config.step_volatility_bps,
         )
         return max(self.values(initial))
+
+
+class LimitOrderAwareQLearningAgent(ScheduleAwareQLearningAgent):
+    """Bilateral self-play Q learner that observes its live child-order queue.
+
+    This class is used by the event-driven limit-order self-play model only.
+    The historical full-fill benchmark keeps its original state encoding.
+    """
+
+    state_encoding = "schedule_aware_limit_order_v2"
+
+    def state_key(self, obs: Observation) -> tuple[int, ...]:
+        time_phase = min(5, obs.t // 10)
+        steps_left = max(obs.horizon - obs.t, 1)
+        pace_ratio = obs.remaining / max(obs.base_slice * steps_left, 1.0)
+        pace_bin = sum(pace_ratio >= cut for cut in (0.95, 1.10, 1.40))
+
+        deviation_bps = (obs.mid / obs.initial_mid - 1.0) * 10_000.0
+        price_bin = sum(deviation_bps >= cut for cut in (-2.0, 2.0))
+        opponent_ratio = obs.opponent_previous_qty / max(obs.base_slice, 1.0)
+        opponent_bin = int(opponent_ratio >= 1.0)
+
+        if obs.open_order_qty <= 1e-9 or obs.limit_price <= 0:
+            order_price_bin = 0
+            order_size_bin = 0
+            queue_bin = 0
+            age_bin = 0
+        else:
+            offset_bps = (obs.limit_price / obs.mid - 1.0) * 10_000.0
+            # 1=deep passive, 2=best bid, 3=inside-spread, 4=marketable.
+            order_price_bin = (1 if offset_bps <= -2.5 else
+                               2 if offset_bps <= -1.5 else
+                               3 if offset_bps < 0.0 else 4)
+            order_size_bin = int(obs.open_order_qty > obs.base_slice)
+            queue_ratio = obs.queue_ahead / max(obs.base_slice, 1.0)
+            queue_bin = int(queue_ratio >= 1.0)
+            age_bin = int(obs.order_age_steps >= 2)
+
+        return (time_phase, pace_bin, price_bin, opponent_bin,
+                order_price_bin, order_size_bin, queue_bin, age_bin,
+                int(obs.t == obs.horizon - 1))
+
+    def minimum_next_action_index(self, obs: Observation) -> int:
+        # Submitting more shares does not ensure they execute. No action is
+        # therefore declared feasible solely from the parent-order schedule.
+        return 0
+
+    def initial_state_max_q(self) -> float:
+        initial = Observation(
+            0, self.config.order_size, self.config.initial_price,
+            self.config.initial_price, 0.0, self.config.base_slice,
+            self.config.horizon, self.config.step_volatility_bps,
+        )
+        return max(self.q.get(self.state_key(initial), [0.0] * len(ACTIONS)))
