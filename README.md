@@ -36,6 +36,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 - [多智能体交易模型逐步运行机制详解（自主决策版）](multi_agent_execution/多智能体交易模型逐步运行机制详解_自主决策版.md)：按程序执行顺序解释初始化、状态和动作、每个 30 秒步的撮合流程、终端兜底、Q-learning 更新、训练评估与指标口径。
 - [完单惩罚配对验证记录](multi_agent_execution/penalty_shaping_validation.md)：对比加入逐步进度惩罚和终局残余惩罚前后的兜底成交量与经济成本。
 - [方案 C 学习型决策头说明](multi_agent_execution/方案C学习型决策头说明.md)：说明 Agent 如何逐步学习 C 的启动时点和加急措施。
+- [学习型方案 C 机制详解](multi_agent_execution/学习型方案C机制详解.md)：详细说明状态、行动、奖励更新和一个完整时间步的执行流程。
 - [方案 C 随机介入与训练评估](multi_agent_execution/方案C兜底量配对评估.md)：记录旧随机 C 与纯 Q 的历史配对结果。
 - [项目运行指南](multi_agent_execution/README.md)：参数、运行入口和输出文件。
 - `multi_agent_execution/模型主要运行机制.md`：限价单版本之前的历史机制说明，不能代替新文档。
