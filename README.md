@@ -1,6 +1,6 @@
 # marl-trade-execution
 
-A、B 两家机构在收盘前进行双边同步 Independent Q-learning 的多智能体交易执行仿真。当前主模型使用简化的事件驱动限价单撮合：挂单进入队列，卖方订单流消耗队列，订单可能部分成交、撤销或到期。提交量不再默认等于成交量，实际完成率作为结果报告。
+A、B 两家机构在收盘前进行双边同步 Independent Q-learning 的多智能体交易执行仿真。当前主模型使用事件驱动限价单撮合和方案 C 完单机制：前期自主报价，落后进度时逐级提高限价的可成交范围，最后一步对剩余母单按公开的合成冲击价格强制完成。C 模式在模拟环境内保证按时完成全部订单，并单独报告强制成交量与成本；这项保证来自环境兜底，不代表真实市场必然有流动性。
 
 ## 快速运行
 
@@ -11,7 +11,7 @@ cd multi_agent_execution
 python .\run_experiment.py
 ```
 
-默认配置为 30 分钟窗口、每 30 秒一步、A/B 各 100,000 股、单边手续费 30bp；训练使用 5 个独立种子、每个 500 回合，评估冻结检查点并交叉组合。默认输出目录为 `multi_agent_execution/outputs/advanced_self_play_limit_orders/`。
+默认配置为 30 分钟窗口、每 30 秒一步、A/B 各 100,000 股、单边手续费 30bp；训练使用 5 个独立种子、每个 500 回合，评估冻结检查点并交叉组合。默认启用 C 模式，输出目录为 `multi_agent_execution/outputs/advanced_self_play_completion_c/`。使用 `--completion-mode none` 可运行无兜底对照，但该模式不保证完成订单。
 
 小规模运行：
 
@@ -21,13 +21,13 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 
 ## 模型说明
 
-- [限价单多智能体模型机制说明](multi_agent_execution/限价单多智能体模型机制说明.md)：状态、动作、队列、成交概率、奖励、成本和研究边界。
+- [限价单多智能体模型机制说明](multi_agent_execution/限价单多智能体模型机制说明.md)：状态、动作、队列撮合、方案 C 截止加急与收盘兜底、奖励、成本和研究边界。
 - [项目运行指南](multi_agent_execution/README.md)：参数、运行入口和输出文件。
 - `multi_agent_execution/模型主要运行机制.md`：限价单版本之前的历史机制说明，不能代替新文档。
 
 ## 重要口径
 
-订单流、队列深度和可见卖盘深度是合成参数，目前没有用真实逐笔行情校准。近期 1 个训练种子、500 回合、3 个评估种子的机制试跑中，最终检查点完成率约为 14%–21%；这只是小样本下的机制观察，不能据此宣称策略能够完成母单或优于规则策略。报告成本必须与完成率和未完成股数一起解读。
+订单流、队列深度、可见卖盘和收盘兜底价格是合成设定，没有用真实逐笔行情校准。方案 C 的小规模试跑已在模拟中完成全部订单，但仍有较多股数依赖收盘兜底；结果只用于核对机制及成本记录，不能据此宣称 Q-learning 优于规则策略。报告成本必须同时列出完成率、主动成交量和强制成交量。C 模式试跑记录见 `multi_agent_execution/outputs/deadline_completion_c_validation/`；无兜底对照见 `multi_agent_execution/outputs/deadline_no_completion_validation/`。
 
 旧版 `outputs/advanced_self_play/` 和 `run_matched_rule_q_comparison.py` 基于提交即成交环境，不能与限价单版本直接拼表。规则策略要与新 Q 策略比较，必须在同一限价单撮合环境中重新运行。
 

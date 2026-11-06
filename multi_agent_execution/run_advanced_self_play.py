@@ -30,17 +30,20 @@ from run_standard_benchmark import (
 )
 from limit_order_book import (
     ChildOrder,
+    Fill,
     SyntheticLOBConfig,
+    deadline_urgency,
     make_market_tape,
     match_marketable_orders,
     match_passive_orders,
     queue_ahead_for_new_order,
     quote_for_action,
+    terminal_completion_price,
 )
 from schedule_aware_q import LimitOrderAwareQLearningAgent
 
 
-DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play_limit_orders"
+DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play_completion_c"
 SCENARIOS = (("normal", 1.0), ("high_volatility", 2.0))
 ACTION_NAMES = (
     "hold_or_wait", "passive_half_deep", "passive_base_best_bid",
@@ -59,7 +62,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-interval", type=int, default=100)
     parser.add_argument("--fee-bps", type=float, default=30.0, help="one-way fee in basis points; 30bp = 0.3%%")
     parser.add_argument("--seed", type=int, default=20261103)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUT)
+    parser.add_argument(
+        "--completion-mode", choices=("c", "none"), default="c",
+        help="C applies deadline urgency and a terminal completion backstop; none preserves the no-guarantee baseline",
+    )
+    parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
     if args.episodes < 1 or args.training_runs < 1 or args.eval_seeds < 1:
         parser.error("episodes, training-runs, and eval-seeds must be positive")
@@ -67,6 +74,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("checkpoint-interval must be positive")
     if args.fee_bps < 0:
         parser.error("fee-bps cannot be negative")
+    if args.output_dir is None:
+        suffix = "completion_c" if args.completion_mode == "c" else "no_completion"
+        args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}"
     return args
 
 
@@ -136,8 +146,11 @@ def frozen_action(agent: QLearningAgent, obs: Any, rng: random.Random) -> int:
 def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             seed: int, fee_bps: float, volatility_multiplier: float,
             epsilon: float = 0.0, training: bool = False,
-            trace_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+            trace_rows: list[dict[str, Any]] | None = None,
+            completion_mode: str = "c") -> dict[str, Any]:
     """Run one synchronous episode with event-based limit-order execution."""
+    if completion_mode not in {"c", "none"}:
+        raise ValueError("completion_mode must be 'c' or 'none'")
     rng_a = random.Random(seed ^ 0x13579BDF)
     rng_b = random.Random(seed ^ 0x2468ACE0)
     tape = make_market_tape(
@@ -152,6 +165,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
     cancelled = {"A": 0.0, "B": 0.0}
     maker_fills = {"A": 0.0, "B": 0.0}
     taker_fills = {"A": 0.0, "B": 0.0}
+    forced_fills = {"A": 0.0, "B": 0.0}
+    forced_cost_contribution_bps = {"A": 0.0, "B": 0.0}
+    deadline_urgency_steps = {"A": 0, "B": 0}
+    deadline_action_overrides = {"A": 0, "B": 0}
     gross_cash = {"A": 0.0, "B": 0.0}
     fee_cash = {"A": 0.0, "B": 0.0}
     prev_qty = {"A": 0.0, "B": 0.0}
@@ -208,15 +225,30 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             for name in ("A", "B")
         }
         action_idx: dict[str, int] = {}
+        proposed_action_idx: dict[str, int] = {}
+        action_floor: dict[str, int] = {"A": 0, "B": 0}
+        urgency_ticks: dict[str, int] = {"A": 0, "B": 0}
+        urgency_stage: dict[str, str] = {"A": "disabled", "B": "disabled"}
         for name in ("A", "B"):
             if training:
-                action_idx[name] = agents[name].select(
+                proposed_action_idx[name] = agents[name].select(
                     observations[name], rngs[name], epsilon, 0
                 )
             else:
-                action_idx[name] = frozen_action(agents[name], observations[name], rngs[name])
+                proposed_action_idx[name] = frozen_action(agents[name], observations[name], rngs[name])
+            if completion_mode == "c":
+                action_floor[name], urgency_ticks[name], urgency_stage[name] = deadline_urgency(
+                    t, config.horizon, remaining[name], config.order_size,
+                )
+                if urgency_stage[name] not in {"on_schedule", "early_autonomous_window"}:
+                    deadline_urgency_steps[name] += 1
+            action_idx[name] = max(proposed_action_idx[name], action_floor[name])
+            if action_idx[name] != proposed_action_idx[name]:
+                deadline_action_overrides[name] += 1
 
         submitted_this_step = {"A": 0.0, "B": 0.0}
+        policy_action_qty = {"A": 0.0, "B": 0.0}
+        deadline_catch_up_qty = {"A": 0.0, "B": 0.0}
         replaced_qty = {"A": 0.0, "B": 0.0}
         order_type_this_step = {"A": "hold_or_wait", "B": "hold_or_wait"}
         limit_price_this_step: dict[str, float | None] = {"A": None, "B": None}
@@ -232,13 +264,22 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 replaced_qty[name] = old.remaining_qty
                 cancelled[name] += old.remaining_qty
                 orders[name] = None
-            order_qty = min(remaining[name], config.base_slice * ACTIONS[idx])
+            policy_action_qty[name] = min(remaining[name], config.base_slice * ACTIONS[idx])
+            order_qty = policy_action_qty[name]
+            if (completion_mode == "c"
+                    and urgency_stage[name] in {"urgency_window", "high_urgency_window", "final_sweep_window"}
+                    and idx == 4):
+                steps_left = max(1, config.horizon - t)
+                catch_up_qty = remaining[name] / steps_left
+                order_qty = min(remaining[name], max(order_qty, catch_up_qty))
+                deadline_catch_up_qty[name] = max(0.0, order_qty - policy_action_qty[name])
             submitted_this_step[name] = order_qty
             submitted[name] += order_qty
             if order_qty <= 1e-9:
                 continue
             limit_price, marketable, tier, order_type = quote_for_action(
                 idx, mid, config.half_spread_bps, LOB_CONFIG.tick_bps,
+                urgency_ticks[name],
             )
             limit_price_this_step[name] = limit_price
             order_type_this_step[name] = order_type
@@ -267,7 +308,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         for name in ("A", "B"):
             order = orders[name]
             if order is not None and order.marketable:
-                if order.order_type == "marketable_limit_ioc":
+                if order.order_type.endswith("_ioc"):
                     ioc_cancelled[name] = order.remaining_qty
                     cancelled[name] += order.remaining_qty
                     orders[name] = None
@@ -283,6 +324,42 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             float(event["sell_flow"]), tie_order,
         )
         fill_events = taker_events + maker_events
+        terminal = t == config.horizon - 1
+        forced_completion_qty = {"A": 0.0, "B": 0.0}
+        forced_completion_price: float | None = None
+        forced_completion_impact_bps = 0.0
+        if completion_mode == "c" and terminal:
+            regular_fills = {
+                name: sum(fill.quantity for fill in fill_events if fill.agent == name)
+                for name in ("A", "B")
+            }
+            forced_total = sum(
+                max(0.0, remaining[name] - regular_fills[name])
+                for name in ("A", "B")
+            )
+            if forced_total > 1e-9:
+                forced_completion_price, forced_completion_impact_bps = terminal_completion_price(
+                    mid, config.half_spread_bps, LOB_CONFIG.tick_bps, forced_total,
+                    config.base_slice, config.temporary_impact_bps_per_slice,
+                    config.market_impact_multiplier, config.step_minutes,
+                )
+                for name in ("A", "B"):
+                    forced_completion_qty[name] = max(
+                        0.0, remaining[name] - regular_fills[name]
+                    )
+                    if forced_completion_qty[name] > 1e-9:
+                        forced_cost_contribution_bps[name] += (
+                            forced_completion_qty[name]
+                            * (forced_completion_price * (1 + fee_bps / 10_000.0) - initial_mid)
+                            / (config.order_size * initial_mid) * 10_000.0
+                        )
+                        # Synthetic market-on-close backstop: residual shares are
+                        # filled at one shared, impact-stressed terminal price.
+                        fill_events.append(Fill(
+                            name, forced_completion_qty[name],
+                            forced_completion_price, "forced",
+                        ))
+                        submitted[name] += forced_completion_qty[name]
         aggressive_volume = sum(fill.quantity for fill in taker_events)
         temp_impact_bps = (
             config.temporary_impact_bps_per_slice
@@ -302,8 +379,10 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             fee_cash[fill.agent] += fill.quantity * fee_per_share
             if fill.liquidity == "maker":
                 maker_fills[fill.agent] += fill.quantity
-            else:
+            elif fill.liquidity == "taker":
                 taker_fills[fill.agent] += fill.quantity
+            else:
+                forced_fills[fill.agent] += fill.quantity
 
         for name in ("A", "B"):
             fills[name] += actual_fill_this_step[name]
@@ -333,7 +412,6 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         shock_bps = float(event["shock_bps"])
         next_mid = mid * (1 + (shock_bps + permanent_impact) / 10_000.0)
         next_prev_qty = actual_fill_this_step.copy()
-        terminal = t == config.horizon - 1
         deadline_cancelled = {"A": 0.0, "B": 0.0}
         if terminal:
             for name in ("A", "B"):
@@ -388,8 +466,14 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                     "remaining_before_shares": remaining_before[name],
                     "opponent_previous_qty": prev_qty_before[opponent_name],
                     "mid_before": mid_before,
+                    "proposed_action": ACTION_NAMES[proposed_action_idx[name]],
                     "action": ACTION_NAMES[action_idx[name]],
                     "action_multiplier": ACTIONS[action_idx[name]],
+                    "deadline_action_floor": action_floor[name],
+                    "deadline_urgency_ticks": urgency_ticks[name],
+                    "deadline_urgency_stage": urgency_stage[name],
+                    "policy_action_qty": policy_action_qty[name],
+                    "deadline_catch_up_qty": deadline_catch_up_qty[name],
                     "order_type": order_type_this_step[name],
                     "limit_price": limit_price_this_step[name],
                     "submitted_qty": submitted_this_step[name],
@@ -409,10 +493,18 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                     "sell_market_flow_qty": event["sell_flow"],
                     "visible_ask_depth_level_1": event["ask_depths"][0],
                     "visible_ask_depth_level_2": event["ask_depths"][1],
+                    "visible_ask_depth_level_3": event["ask_depths"][2],
+                    "visible_ask_depth_level_4": event["ask_depths"][3],
+                    "visible_ask_depth_level_5": event["ask_depths"][4],
+                    "visible_ask_depth_level_6": event["ask_depths"][5],
+                    "visible_ask_depth_level_7": event["ask_depths"][6],
                     "actual_filled_qty": actual_fill_this_step[name],
                     "joint_actual_filled_qty": total_executed,
                     "maker_filled_qty": sum(f.quantity for f in maker_events if f.agent == name),
                     "taker_filled_qty": sum(f.quantity for f in taker_events if f.agent == name),
+                    "forced_completion_qty": forced_completion_qty[name],
+                    "forced_completion_price": forced_completion_price,
+                    "forced_completion_impact_bps": forced_completion_impact_bps,
                     "open_order_remaining_after": (orders[name].remaining_qty
                                                     if orders[name] else 0.0),
                     "queue_ahead_after": (orders[name].queue_ahead if orders[name] else 0.0),
@@ -463,6 +555,14 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         "filled_A": fills["A"], "filled_B": fills["B"],
         "maker_fills_A": maker_fills["A"], "maker_fills_B": maker_fills["B"],
         "taker_fills_A": taker_fills["A"], "taker_fills_B": taker_fills["B"],
+        "forced_completion_A": forced_fills["A"],
+        "forced_completion_B": forced_fills["B"],
+        "forced_completion_cost_contribution_A_bps": forced_cost_contribution_bps["A"],
+        "forced_completion_cost_contribution_B_bps": forced_cost_contribution_bps["B"],
+        "deadline_urgency_steps_A": deadline_urgency_steps["A"],
+        "deadline_urgency_steps_B": deadline_urgency_steps["B"],
+        "deadline_action_overrides_A": deadline_action_overrides["A"],
+        "deadline_action_overrides_B": deadline_action_overrides["B"],
         "cancelled_A": cancelled["A"], "cancelled_B": cancelled["B"],
         "reward_A": total_reward["A"], "reward_B": total_reward["B"],
         "actions_A": json.dumps(dict(action_counts["A"]), ensure_ascii=False, sort_keys=True),
@@ -500,7 +600,8 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
     for ep in range(1, args.episodes + 1):
         epsilon = config.epsilon_start + (config.epsilon_end - config.epsilon_start) * (ep - 1) / max(args.episodes - 1, 1)
         result = episode(agent_a, agent_b, config, run_seed + ep * 37 + 11,
-                         args.fee_bps, 1.0, epsilon=epsilon, training=True)
+                         args.fee_bps, 1.0, epsilon=epsilon, training=True,
+                         completion_mode=args.completion_mode)
         rewards_a.append(result["reward_A"])
         rewards_b.append(result["reward_B"])
         costs_a.append(result["cost_A_bps"])
@@ -515,6 +616,14 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
             "A_filled_shares": result["filled_A"], "B_filled_shares": result["filled_B"],
             "A_maker_filled_shares": result["maker_fills_A"], "B_maker_filled_shares": result["maker_fills_B"],
             "A_taker_filled_shares": result["taker_fills_A"], "B_taker_filled_shares": result["taker_fills_B"],
+            "A_forced_completion_shares": result["forced_completion_A"],
+            "B_forced_completion_shares": result["forced_completion_B"],
+            "A_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_A_bps"],
+            "B_forced_completion_cost_contribution_bps": result["forced_completion_cost_contribution_B_bps"],
+            "A_deadline_urgency_steps": result["deadline_urgency_steps_A"],
+            "B_deadline_urgency_steps": result["deadline_urgency_steps_B"],
+            "A_deadline_action_overrides": result["deadline_action_overrides_A"],
+            "B_deadline_action_overrides": result["deadline_action_overrides_B"],
             "A_cancelled_shares": result["cancelled_A"], "B_cancelled_shares": result["cancelled_B"],
             "A_actions": result["actions_A"], "B_actions": result["actions_B"],
         })
@@ -560,7 +669,8 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                     a = instantiate_snapshot(config, snapshots[a_cp]["A"])
                     b = instantiate_snapshot(config, snapshots[b_cp]["B"])
                     result = episode(a, b, config, seed, args.fee_bps,
-                                     volatility_multiplier, training=False)
+                                     volatility_multiplier, training=False,
+                                     completion_mode=args.completion_mode)
                     rows.append({
                         "training_run": run_id, "A_checkpoint": a_cp, "B_checkpoint": b_cp,
                         "scenario": scenario, "seed": seed,
@@ -571,6 +681,14 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                         "filled_A": result["filled_A"], "filled_B": result["filled_B"],
                         "maker_fills_A": result["maker_fills_A"], "maker_fills_B": result["maker_fills_B"],
                         "taker_fills_A": result["taker_fills_A"], "taker_fills_B": result["taker_fills_B"],
+                        "forced_completion_A": result["forced_completion_A"],
+                        "forced_completion_B": result["forced_completion_B"],
+                        "forced_completion_cost_contribution_A_bps": result["forced_completion_cost_contribution_A_bps"],
+                        "forced_completion_cost_contribution_B_bps": result["forced_completion_cost_contribution_B_bps"],
+                        "deadline_urgency_steps_A": result["deadline_urgency_steps_A"],
+                        "deadline_urgency_steps_B": result["deadline_urgency_steps_B"],
+                        "deadline_action_overrides_A": result["deadline_action_overrides_A"],
+                        "deadline_action_overrides_B": result["deadline_action_overrides_B"],
                         "cancelled_A": result["cancelled_A"], "cancelled_B": result["cancelled_B"],
                         "reward_A": result["reward_A"], "reward_B": result["reward_B"],
                         "actions_A": result["actions_A"], "actions_B": result["actions_B"],
@@ -607,6 +725,14 @@ def summarize_cross_play(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             "B_maker_fills_mean": statistics.fmean(r["maker_fills_B"] for r in group),
             "A_taker_fills_mean": statistics.fmean(r["taker_fills_A"] for r in group),
             "B_taker_fills_mean": statistics.fmean(r["taker_fills_B"] for r in group),
+            "A_forced_completion_mean": statistics.fmean(r["forced_completion_A"] for r in group),
+            "B_forced_completion_mean": statistics.fmean(r["forced_completion_B"] for r in group),
+            "A_forced_completion_cost_contribution_mean_bps": statistics.fmean(r["forced_completion_cost_contribution_A_bps"] for r in group),
+            "B_forced_completion_cost_contribution_mean_bps": statistics.fmean(r["forced_completion_cost_contribution_B_bps"] for r in group),
+            "A_deadline_urgency_steps_mean": statistics.fmean(r["deadline_urgency_steps_A"] for r in group),
+            "B_deadline_urgency_steps_mean": statistics.fmean(r["deadline_urgency_steps_B"] for r in group),
+            "A_deadline_action_overrides_mean": statistics.fmean(r["deadline_action_overrides_A"] for r in group),
+            "B_deadline_action_overrides_mean": statistics.fmean(r["deadline_action_overrides_B"] for r in group),
             "A_cancelled_mean": statistics.fmean(r["cancelled_A"] for r in group),
             "B_cancelled_mean": statistics.fmean(r["cancelled_B"] for r in group),
             "A_reward_mean": statistics.fmean(r["reward_A"] for r in group),
@@ -695,17 +821,27 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         "- 训练在正常波动环境进行；训练检查点分别冻结后，在正常与 2 倍波动场景做交叉对局。",
         f"- 本结果属于路线 A（A/B 双边同步 Independent Q-learning）；路线 B 的规则引导 Double Q 对固定规则对手实验须单独报告。",
         f"- 当前单边费率为 {args.fee_bps:g} bp（{args.fee_bps / 100:g}%）；按初始价 {Config().initial_price:g}、每方母单 {Config().order_size:,.0f} 股估算，单家满额手续费约 {Config().initial_price * Config().order_size * args.fee_bps / 10_000:,.0f}。",
-        "- 执行机制为教学用事件驱动限价单：报价进入队列，成交量由队列前方数量、可见卖盘深度和随机订单流共同决定；提交量不等于成交量，未完成母单会保留并计入终局惩罚。",
+        ("- 完成方案 C 已启用：前期由 Q-learning 自主挂限价单；落后线性进度时，执行进度达到 70% 起将最低动作提高为可成交限价 IOC，70%、85%、95% 阶段的报价上限分别上移 1、3、6 个价位；截止步对剩余母单执行合成收盘强制成交。完成率 100% 是约束机制保证，不是 Q-learning 单独学出的效果。"
+         if args.completion_mode == "c" else
+         "- 完成方案 C 未启用：保留原有限价单行为，订单可能未能在截止前全部成交；此模式仅作为对照基线。"),
+        "- 普通执行仍是教学用事件驱动限价单：成交量由队列、可见卖盘和随机订单流决定；普通 IOC 只触达前两档，加急限价单可按价格上限触达更深的合成档位；C 方案最后的强制成交使用显式合成深层流动性价格曲线，并单独记录强制成交股数。",
         "- 本文件的数字仅是本次命令参数下的模拟结果，不自动代表收敛或现实市场效果。", "",
         "## 最终检查点的交叉对局", "",
-        "下表按训练运行和场景汇总 A/B 均采用最终检查点的对局。成本越低越好；完成率和未完成量应同时检查。", "",
-        "| 训练运行 | 场景 | A 成本均值 (bp) | A 成本标准差 | A 完成率 | B 成本均值 (bp) | B 成本标准差 | B 完成率 |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|",
+        "下表按训练运行和场景汇总 A/B 均采用最终检查点的对局。成本越低越好；C 模式成本含收盘强制成交及手续费，并同时列出强制成交股数与其成本贡献。", "",
+        "| 训练运行 | 场景 | A 成本 (bp) | A 完成率 | A 强制股数 | A 强制成本贡献 (bp) | B 成本 (bp) | B 完成率 | B 强制股数 | B 强制成本贡献 (bp) |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for run_id in sorted({r["training_run"] for r in summaries}):
         for scenario, _ in SCENARIOS:
             row = next(r for r in summaries if r["training_run"] == run_id and r["A_checkpoint"] == final_episode and r["B_checkpoint"] == final_episode and r["scenario"] == scenario)
-            lines.append(f"| {run_id} | {scenario} | {row['A_cost_mean_bps']:.3f} | {row['A_cost_sd_bps']:.3f} | {row['A_completion_mean']:.3f} | {row['B_cost_mean_bps']:.3f} | {row['B_cost_sd_bps']:.3f} | {row['B_completion_mean']:.3f} |")
+            lines.append(
+                f"| {run_id} | {scenario} | {row['A_cost_mean_bps']:.3f} | "
+                f"{row['A_completion_mean']:.3f} | {row['A_forced_completion_mean']:.0f} | "
+                f"{row['A_forced_completion_cost_contribution_mean_bps']:.3f} | "
+                f"{row['B_cost_mean_bps']:.3f} | {row['B_completion_mean']:.3f} | "
+                f"{row['B_forced_completion_mean']:.0f} | "
+                f"{row['B_forced_completion_cost_contribution_mean_bps']:.3f} |"
+            )
     lines += ["", "## 跨训练种子汇总与学习诊断", "",
               "下表先在每个训练运行内对评估种子取均值，再汇总不同训练运行；± 后为训练运行均值的标准差。该值描述随机训练种子间的差异，不是每个评估回合的标准误。", "",
               "| 场景 | A 最终成本均值 ± 训练种子标准差 (bp) | B 最终成本均值 ± 训练种子标准差 (bp) |",
@@ -728,16 +864,16 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
               f"最终检查点对照同一训练运行中保存的冻结检查点集合，候选集后悔值均值为 {statistics.fmean(regrets):.4f} bp（共 {len(regrets)} 个方向/场景/运行观测）。",
               "该量只表示相对有限检查点候选集的成本差，不是全局最优策略，也不构成纳什均衡证明。", "",
               "## 解释边界", "",
-              "- A、B 在每步基于同一交易前快照同步决策，各自只能观察自身库存、上期对手成交量和自己的当前挂单；市场之后统一处理可成交限价单和卖方主动订单流。",
+              "- A、B 在每步基于同一交易前快照同步决策，各自只能观察自身库存、上期对手成交量和自己的当前挂单；市场之后统一处理可成交限价单和卖方主动订单流。C 模式收盘兜底数量不由 Agent 自主动作决定。",
               "- 动作 0 保留已有报价或等待；动作 1–3 分别挂深档买单、最佳买价和价差内报价，动作 4 提交价格上限为卖一价上方一档的可成交限价 IOC。被动订单可部分成交并保留，队列在 4 个时间步（2 分钟）后过期；IOC 未成交余量立即撤销。",
-              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。TD 奖励只按真实成交量计算，未成交母单在终局计入机会成本和未完成惩罚。下一状态从已尝试动作中自举，不再使用‘提交量可保证完成’的动作下界。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
-              "- 买方被动成交由卖方主动订单流穿过队列触发；主动限价成交受两档可见卖盘深度约束。价格冲击只按实际成交量更新，手续费只按实际成交名义金额计算。",
+              "- Q 状态包含时间阶段、执行进度、价格偏离、对手上期成交量、当前报价档位、挂单余量、队列前方数量和订单年龄。TD 奖励只按实际成交量计算；`none` 模式下未成交母单在终局计入机会成本和未完成惩罚，C 模式下由收盘兜底成交，因此终局未完成量为零。下一状态只从已尝试动作中自举；C 的截止加急和追赶数量属于执行层覆盖，不是 Q 动作或 Q 值。训练中双方策略都变化，环境对单方而言仍是非平稳的。",
+              "- 买方被动成交由卖方主动订单流穿过队列触发；普通主动限价成交按报价上限消耗七档合成卖盘，普通 IOC 通常只触达前两档。截止加急可触达更深档位；收盘兜底按单独公开的合成冲击价格成交。手续费只按实际成交名义金额计算。",
               "- 检查点交叉对局把已保存的策略冻结后进行组合评估，避免评估过程继续改写 Q 表；配对种子共享外生价格冲击。",
               "- 稳定性要结合多训练种子的滚动奖励、成本波动、状态覆盖与检查点交叉结果判断。单一训练曲线变平不足以证明收敛。",
               "- 历史资料若使用 0.3 bp 或 30 个时间步，未按当前手续费和 60 步配置重跑前不得与本结果并表。",
-              "- 可用 export_self_play_trace.py 从保存的最终检查点生成一条额外的 A/B 同步动作、市场反馈和 Q 更新样例；该说明性轨迹不进入本文件的 10,800 局统计。",
-              "- 本版主模型结果写入 outputs/advanced_self_play_limit_orders；旧 outputs/advanced_self_play 属于提交即成交的历史模型，不应与本版直接合并。规则策略配对比较仍由 run_matched_rule_q_comparison.py 单独生成。",
-              "- 该环境是未用真实行情校准的合成订单簿，不含完整撮合交易所规则、隐藏流动性或实盘接口；队列深度和订单流参数应作为显式模拟假设解释。"]
+              "- 可用 export_self_play_trace.py 从保存的最终检查点生成一条额外的 A/B 同步动作、市场反馈和 Q 更新样例；说明性轨迹不进入本次交叉评估统计。",
+              "- C 模式结果写入 outputs/advanced_self_play_completion_c；`--completion-mode none` 的无兜底对照写入 outputs/advanced_self_play_no_completion。两种完成约束不同，不能仅按成本高低直接排序。规则策略配对比较仍由 run_matched_rule_q_comparison.py 单独生成，并须使用同一 C 撮合机制重新评估。",
+              "- 该环境是未用真实行情校准的合成订单簿，不含完整撮合交易所规则、隐藏流动性或实盘接口；队列深度、订单流和收盘深层流动性兜底均为显式模拟假设。"]
     return "\n".join(lines) + "\n"
 
 
@@ -805,12 +941,23 @@ def main() -> None:
             "agent_A": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "agent_B": "opponent-aware tabular Q-learning with schedule-aware state aggregation",
             "state_encoding": LimitOrderAwareQLearningAgent.state_encoding,
-            "reward_alignment": "implementation shortfall plus terminal unfilled-order penalty; no extra inventory-risk shaping",
-            "untried_action_bootstrap": "only tried actions are included; there is no submitted-quantity completion floor",
+            "reward_alignment": "implementation shortfall on actual fills; terminal unfilled-order penalty applies only in none mode; no extra inventory-risk shaping",
+            "untried_action_bootstrap": "only tried actions are included; C deadline catch-up quantity is an execution overlay, not a Q action bootstrap floor",
             "simultaneous_action_and_update": True,
-            "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, displayed ask depth, sell-market order flow, TTL expiry, and IOC cancellation",
+            "execution_model": "synthetic event-driven limit-order book with partial fills, persistent passive orders, queue ahead, seven displayed ask levels, sell-market order flow, TTL expiry, IOC cancellation, and an optional impact-priced market-on-close backstop",
             "submission_vs_execution": "submitted child quantity is not treated as filled; parent inventory falls only by matched execution quantity",
-            "completion_constraint": "none; actual completion rate is an outcome and terminal unfilled shares incur opportunity cost plus penalty",
+            "completion_mode": args.completion_mode,
+            "completion_constraint": (
+                "hard completion by a synthetic market-on-close backstop; residual quantity is fully filled at an impact-stressed average price"
+                if args.completion_mode == "c" else
+                "none; actual completion rate is an outcome and terminal unfilled shares incur opportunity cost plus penalty"
+            ),
+            "deadline_urgency_policy": {
+                "enabled": args.completion_mode == "c",
+                "behind_schedule_action_floors": {"70_percent": 4, "85_percent": 4, "95_percent": 4},
+                "quote_escalation_ticks": {"70_percent": 1, "85_percent": 3, "95_percent": 6},
+                "terminal_backstop_price": "half-spread + tick_bps*sqrt(forced_qty/base_slice) + temporary_impact_bps_per_slice*market_impact_multiplier*step_minutes*(forced_qty/base_slice)"
+            },
             "limit_order_parameters": asdict(LOB_CONFIG),
             "fee_economic_interpretation": f"{args.fee_bps:g} bp one-way = {args.fee_bps / 100:g}% of traded notional",
             "checkpoint_evaluation": "frozen cross-play on paired seeds",
