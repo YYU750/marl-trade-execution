@@ -14,9 +14,9 @@ const pages = [
   { id: 'summary', label: '回合总结', title: '回合总结', icon: 'layers' },
 ] as const
 type Page = typeof pages[number]['id']
-type IconName = typeof pages[number]['icon'] | 'logo' | 'upload' | 'pause' | 'previous' | 'next' | 'lock' | 'check' | 'arrow' | 'bank'
+type IconName = typeof pages[number]['icon'] | 'snowflake' | 'upload' | 'pause' | 'previous' | 'next' | 'lock' | 'check' | 'arrow' | 'bank'
 const paths: Record<IconName, ReactNode> = {
-  logo: <><path d="M2 14c4 0 4-7 9-7s5 7 11 7M2 19c5 0 6-4 10-4s5 4 10 4"/><circle cx="17" cy="5" r="2"/></>,
+  snowflake: <path d="M12 2v20M3.34 7l17.32 10M3.34 17l17.32-10M9 4l3 3 3-3m-6 16 3-3 3 3M4 10l4-1-1-4m10 14-1-4 4-1M4 14l4 1-1 4M17 5l-1 4 4 1"/>,
   play: <path d="m8 5 12 7-12 7Z"/>,
   decision: <><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 8v8m6-8v8M7 11h4m2 2h4"/></>,
   chart: <><path d="M3 18h18M4 14l5-5 4 3 6-7"/><path d="M15 5h4v4"/></>,
@@ -76,7 +76,8 @@ function Timeline({ current, total, stepSeconds, playing, speed, onStep, onPlay,
         style={{ '--progress': `${100 * current / Math.max(total - 1, 1)}%` } as CSSProperties}
         onChange={event => onStep(Number(event.currentTarget.value) - 1)} />
       <div className={styles.ticks}>{ticks.map(tick =>
-        <button key={tick} onClick={() => onStep(tick - 1)} aria-label={`跳至第 ${tick} 步`}>{tick}</button>
+        <button key={tick} style={{ left: `${100 * (tick - 1) / Math.max(total - 1, 1)}%` }}
+          onClick={() => onStep(tick - 1)} aria-label={`跳至第 ${tick} 步`}>{tick}</button>
       )}</div>
     </div>
     <div className={styles.speed}>
@@ -134,10 +135,8 @@ function Dashboard({ replay, filename, onImport, onRestore }: {
   return <div className={styles.shell}>
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <div className={styles.logo}><Icon name="logo" size={25} /></div>
         <div><strong>MARL</strong><span>交易执行实验室</span></div>
       </div>
-      <div className={styles.navLabel}>策略回放</div>
       <nav className={styles.nav} aria-label="页面导航">
         {pages.map(item => <button key={item.id} onClick={() => changePage(item.id)}
           aria-current={page === item.id ? 'page' : undefined}>
@@ -150,12 +149,13 @@ function Dashboard({ replay, filename, onImport, onRestore }: {
     <main className={styles.main}>
       <header className={styles.header}>
         <div>
-          <div className={styles.eyebrow}>双边交易执行 <span /> 策略实验</div>
-          <h1>{pages.find(item => item.id === page)?.title}</h1>
+          <div className={styles.titleRow}>
+            <h1>{pages.find(item => item.id === page)?.title}</h1>
+            <span className={styles.badge}><Icon name="snowflake" size={16} />冻结策略</span>
+          </div>
           <div className={styles.metadata}>{scenarioLabel(replay.scenario)}<i />检查点 {replay.checkpoint_episode}<i />种子 {replay.seed}</div>
         </div>
         <div className={styles.headerActions}>
-          <span className={styles.badge}><Icon name="lock" size={15} />冻结策略</span>
           <button className={styles.button} onClick={onImport} title={filename}><Icon name="upload" size={16} />导入回放</button>
           {filename !== '内置回放' && <button className={styles.textButton} onClick={onRestore}>恢复样例</button>}
         </div>
@@ -190,7 +190,7 @@ function Dashboard({ replay, filename, onImport, onRestore }: {
             </section>
           })}
         </div>
-        <div className={styles.marketGrid}>
+        <div className={`${styles.marketGrid} ${styles.overviewMarket}`}>
           <section className={styles.glass}>
             <div className={styles.panelHead}><Heading icon="chart">中间价轨迹</Heading><span className={styles.hint}>交易前 · 第 {row.step} 步</span></div>
             <PriceChart steps={replay.steps} current={current} onStep={selectStep} />
@@ -243,8 +243,10 @@ function Dashboard({ replay, filename, onImport, onRestore }: {
           </section>
           <section className={`${styles.glass} ${styles.choice}`} data-agent={agent}>
             <Heading icon="bank">基金 {agent} 的选择</Heading>
-            <span className={styles.actionPill}>{actionLabels[selected.selected_action]}</span>
-            <div className={styles.big}>{shares(selected.selected_quantity_shares)} <small>股</small></div>
+            <div className={styles.choiceResult}>
+              <span className={styles.actionPill}>{actionLabels[selected.selected_action]}</span>
+              <div className={styles.big}>{shares(selected.selected_quantity_shares)} <small>股</small></div>
+            </div>
             <p>{selected.mode === 'twap_fallback_no_tried_feasible_action'
               ? '当前没有已尝试的可行动作。策略回退到可行的基准 TWAP 或最低可行动作。'
               : '在已尝试且满足期限约束的动作中，选取 Q 值最高的动作。'}
@@ -255,7 +257,7 @@ function Dashboard({ replay, filename, onImport, onRestore }: {
             </dl>
           </section>
         </div>
-        <section className={styles.glass}>
+        <section className={`${styles.glass} ${styles.decisionFeedback}`}>
           <div className={styles.panelHead}><Heading icon="layers">同步执行后的市场反馈</Heading>
             <button className={styles.textButton} onClick={() => changePage('market')}>查看成本<Icon name="arrow" size={16} /></button>
           </div>

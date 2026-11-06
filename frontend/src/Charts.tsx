@@ -8,12 +8,12 @@ import styles from './Dashboard.module.css'
 
 use([BarChart, LineChart, GridComponent, LegendComponent, MarkPointComponent, TooltipComponent, SVGRenderer])
 
-const palette = ['#6df3f2', '#b0b7ff']
-const textColor = '#a9c8e7'
-const gridColor = 'rgba(181, 222, 255, 0.13)'
+const palette = ['#52f5ff', '#c0e8ff']
+const textColor = '#e3f3ff'
+const gridColor = 'rgba(196, 235, 255, 0.19)'
 const tooltip = {
   trigger: 'axis', confine: true, renderMode: 'richText',
-  backgroundColor: '#102b4b', borderColor: '#477fa3',
+  backgroundColor: '#095982', borderColor: '#8ce4fa',
   textStyle: { color: '#eefaff' },
 }
 const axis = { axisLabel: { color: textColor }, axisLine: { lineStyle: { color: gridColor } }, axisTick: { show: false } }
@@ -62,15 +62,22 @@ export function PriceChart({ steps, current, onStep }: {
 }) {
   const option = useMemo(() => {
     const prices = steps.map(step => step.market_transition.mid_before)
+    const count = prices.length
+    const ticks = new Set([1, Math.ceil(count / 4), Math.ceil(count / 2), Math.ceil(count * .75), count])
+    const showTick = (_: number, value: string) => ticks.has(Number(value))
     return {
       animation: false, tooltip: { ...tooltip, valueFormatter: (value: number) => num(value, 4) },
-      grid: { left: 60, right: 16, top: 17, bottom: 25 },
-      xAxis: { ...axis, type: 'category', boundaryGap: false, data: steps.map(step => step.step) },
-      yAxis: { ...valueAxis, scale: true, splitNumber: 4, axisLabel: { color: textColor, formatter: (value: number) => num(value, 3) } },
+      grid: { left: 62, right: 19, top: 18, bottom: 26 },
+      xAxis: {
+        ...axis, type: 'category', boundaryGap: false, data: steps.map(step => step.step),
+        axisLabel: { ...axis.axisLabel, interval: showTick },
+        splitLine: { show: true, interval: showTick, lineStyle: { color: gridColor } },
+      },
+      yAxis: { ...valueAxis, scale: true, splitNumber: 4, axisLabel: { color: textColor, formatter: (value: number) => num(value, 4) } },
       series: [{
         name: '交易前中间价', type: 'line', data: prices, showSymbol: false,
-        lineStyle: { width: 1.5, color: '#6096b8', type: 'dashed' },
-        itemStyle: { color: '#6096b8' },
+        lineStyle: { width: 1.6, color: '#8bdce8a6', type: 'dashed' },
+        itemStyle: { color: '#8bdce8' },
       }, {
         name: '已回放', type: 'line', data: prices.map((price, i) => i <= current ? price : null),
         tooltip: { show: false }, showSymbol: false,
@@ -78,7 +85,12 @@ export function PriceChart({ steps, current, onStep }: {
         areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
           { offset: 0, color: '#61e5f344' }, { offset: 1, color: '#61e5f300' },
         ] } },
-        markPoint: { symbol: 'circle', symbolSize: 12, label: { show: false }, itemStyle: {
+        markPoint: { symbol: 'circle', symbolSize: 12, label: {
+          show: true, position: current > count * .68 ? 'left' : 'right', distance: 8,
+          formatter: `步数 ${current + 1}\n中间价 ${num(prices[current], 4)}`,
+          fontSize: 11, lineHeight: 16, padding: [5, 7], borderRadius: 5,
+          color: '#f2fbff', backgroundColor: '#07527ee8', borderColor: '#a9edff', borderWidth: 1,
+        }, itemStyle: {
           color: '#d6ffff', borderWidth: 3, borderColor: '#41d1e7', shadowBlur: 10, shadowColor: '#64eafa',
         }, data: [{ coord: [current, prices[current]] }] },
       }],
