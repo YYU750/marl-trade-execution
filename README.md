@@ -22,6 +22,7 @@ python .\run_experiment.py --episodes 40 --training-runs 2 --eval-seeds 3 --chec
 ## 模型说明
 
 - [限价单多智能体模型机制说明](multi_agent_execution/限价单多智能体模型机制说明.md)：状态、动作、队列撮合、方案 C 截止加急与收盘兜底、奖励、成本和研究边界。
+- [多智能体交易模型逐步运行机制详解（方案 C）](multi_agent_execution/多智能体交易模型逐步运行机制详解_方案C.md)：按程序执行顺序解释初始化、状态和动作、每个 30 秒步的撮合流程、Q-learning 更新、训练评估与指标口径。
 - [项目运行指南](multi_agent_execution/README.md)：参数、运行入口和输出文件。
 - `multi_agent_execution/模型主要运行机制.md`：限价单版本之前的历史机制说明，不能代替新文档。
 
