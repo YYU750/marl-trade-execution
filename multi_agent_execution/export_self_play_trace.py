@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schedule-deficit-penalty-bps", type=float, default=10.0)
     parser.add_argument("--terminal-unfilled-penalty-bps", type=float, default=1_000.0)
     parser.add_argument("--scenario", choices=[name for name, _ in SCENARIOS], default="normal")
-    parser.add_argument("--deadline-c-mode", choices=("none", "learned"), default="none",
+    parser.add_argument("--deadline-c-mode", choices=("none", "learned"), default="learned",
                         help="use the checkpoint's learned Scheme C head in the illustrative trace")
     parser.add_argument("--output", type=Path,
                         default=DEFAULT_OUT / "sample_simultaneous_learning_trace.csv")
