@@ -7,6 +7,9 @@ import styles from './Dashboard.module.css'
 
 export function decisionReason(entry: AgentStep, limit: boolean) {
   const decision = entry.decision
+  if (decision.scheme_c?.intervened) {
+    return `普通策略建议「${actionLabels[decision.scheme_c.proposed_action]}」，方案 C 选择加急 IOC 并按进度缺口追加提交。IOC 未成交的部分会撤销。`
+  }
   if (decision.mode === 'twap_fallback_no_tried_feasible_action') {
     return limit ? '当前状态没有已尝试的动作，使用买一限价作为默认动作。'
       : '当前没有已尝试的可行动作，回退到可行的基准 TWAP 或最低可行动作。'
@@ -109,7 +112,7 @@ export function StepExplanation({ replay, current, agent, onOpen }: {
           <dt>模型依据</dt>
           <dd><p>{decisionReason(entry, limit)}</p>
             {tried.length > 0 && <ul className={styles.explanationValues} aria-label="可比较的 Q 值">
-              {tried.map(({ index }) => <li key={index} data-picked={choices[index] === decision.selected_action}>
+              {tried.map(({ index }) => <li key={index} data-picked={choices[index] === (decision.scheme_c?.proposed_action ?? decision.selected_action)}>
                 {actionLabels[choices[index]]} <b>{num(decision.all_action_q_values[index], 4)}</b>
               </li>)}
             </ul>}

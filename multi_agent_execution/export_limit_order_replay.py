@@ -9,7 +9,10 @@ from math import isclose
 from pathlib import Path
 
 from export_self_play_trace import agent_from_payload
-from run_advanced_self_play import ACTION_NAMES, DEFAULT_OUT, LOB_CONFIG, SCENARIOS, episode
+from run_advanced_self_play import (
+    ACTION_NAMES, DEFAULT_OUT, LOB_CONFIG, SCENARIOS, episode,
+    resolve_participation_scenario,
+)
 from run_standard_benchmark import ACTIONS, Config
 from schedule_aware_q import LimitOrderAwareQLearningAgent
 
@@ -29,15 +32,19 @@ ORDER_FIELDS = {
 }
 
 
-def policy_hash(agent: LimitOrderAwareQLearningAgent) -> str:
+def policy_hash(agent: LimitOrderAwareQLearningAgent, learned_c: bool) -> str:
     states = sorted(set(agent.q) | set(agent.action_visits))
     values = [(key, agent.q.get(key), agent.action_visits.get(key)) for key in states]
+    if learned_c:
+        c = agent.scheme_c
+        c_states = sorted(set(c.q) | set(c.action_visits))
+        values = [values, [(key, c.q.get(key), c.action_visits.get(key)) for key in c_states]]
     return sha256(json.dumps(values, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
 def serialize_agent(row: dict, agent: LimitOrderAwareQLearningAgent, config: Config) -> dict:
     state = tuple(map(int, row["state_key"].split("|")))
-    chosen = ACTION_NAMES.index(row["action"])
+    chosen = ACTION_NAMES.index(row["proposed_action"])
     values = agent.q.get(state, [0.0] * len(ACTIONS))
     visits = agent.action_visits.get(state, [0] * len(ACTIONS))
     tried = [index for index, count in enumerate(visits) if count > 0]
@@ -63,6 +70,15 @@ def serialize_agent(row: dict, agent: LimitOrderAwareQLearningAgent, config: Con
             "mode": ("greedy_q_over_tried_feasible_actions" if tried
                      else "twap_fallback_no_tried_feasible_action"),
             "selected_action": row["action"],
+            **({"scheme_c": {
+                "proposed_action": row["proposed_action"],
+                "available": row["deadline_c_decision_available"],
+                "intervened": row["deadline_c_intervened"],
+                "quote_ticks": row["deadline_urgency_ticks"],
+                "catch_up_fraction": row["deadline_catch_up_fraction"],
+                "base_quantity_shares": row["policy_action_qty"],
+                "added_quantity_shares": row["deadline_catch_up_qty"],
+            }} if row["deadline_c_mode"] == "learned" else {}),
             "selected_quantity_shares": row["submitted_qty"],
             "selected_q_value": values[chosen] if tried else None,
             "greedy_tie_count": ties,
@@ -89,14 +105,17 @@ def serialize_agent(row: dict, agent: LimitOrderAwareQLearningAgent, config: Con
     }
 
 
-def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, multiplier: float) -> dict:
+def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, multiplier: float,
+                 participation: dict) -> dict:
     config = Config(inventory_risk_weight=0.0)
     policies = {name: agent_from_payload(config, checkpoint[name]) for name in AGENTS}
-    before = {name: policy_hash(agent) for name, agent in policies.items()}
+    learned_c = args.deadline_c_mode == "learned"
+    before = {name: policy_hash(agent, learned_c) for name, agent in policies.items()}
     rows: list[dict] = []
     result = episode(policies["A"], policies["B"], config, args.seed, args.fee_bps,
-                     multiplier, epsilon=0.0, training=False, trace_rows=rows, completion_mode=args.completion_mode)
-    after = {name: policy_hash(agent) for name, agent in policies.items()}
+                     multiplier, epsilon=0.0, training=False, trace_rows=rows, completion_mode=args.completion_mode,
+                     deadline_c_mode=args.deadline_c_mode, participation=participation)
+    after = {name: policy_hash(agent, learned_c) for name, agent in policies.items()}
     if before != after or len(rows) != config.horizon * len(AGENTS):
         raise ValueError("Invalid frozen replay")
 
@@ -140,10 +159,12 @@ def build_replay(checkpoint: dict, args: argparse.Namespace, scenario: str, mult
         "schema_version": "2.0",
         "demo_type": "frozen_limit_order_replay",
         "completion_mode": args.completion_mode,
+        **({"deadline_c_mode": "learned"} if learned_c else {}),
         "source_ref": args.source_ref,
         "checkpoint_episode": args.checkpoint,
         "seed": args.seed,
         "scenario": scenario,
+        "participation_tier": participation["tier"],
         "training_updates_applied": False,
         "epsilon": 0,
         "policy_table_sha256_before": before,
@@ -188,21 +209,32 @@ def main() -> None:
     except (OSError, ValueError, KeyError) as exc:
         parser.error(f"cannot load training artifacts ({exc}); see frontend/README.md for training and export commands")
     checkpoint_digest = sha256(checkpoint_bytes).hexdigest()
-    if manifest.get("checkpoint_sha256", {}).get(checkpoint_file.name) != checkpoint_digest:
-        parser.error("training manifest does not attest to this checkpoint; use matching artifacts from a new training run")
+    manifest_checkpoint_hash = manifest.get("checkpoint_sha256", {}).get(checkpoint_file.name)
+    if manifest_checkpoint_hash is not None and manifest_checkpoint_hash != checkpoint_digest:
+        parser.error("training manifest hash does not match this checkpoint; use matching artifacts from a new training run")
+    args.deadline_c_mode = manifest.get("parameters", {}).get("deadline_c_mode", "none")
+    if args.deadline_c_mode not in ("none", "learned"):
+        parser.error("only ordinary and learned Scheme C checkpoints can be exported")
+    if args.deadline_c_mode == "learned" and any(not checkpoint[name].get("scheme_c_policy") for name in AGENTS):
+        parser.error("learned Scheme C checkpoint is missing the auxiliary policy")
+    args.participation_tier = manifest.get("parameters", {}).get("participation_tier", "legacy")
+    participation = resolve_participation_scenario(args.participation_tier, Config(inventory_risk_weight=0.0))
     provenance = {
         "checkpoint_file": checkpoint_file.name,
         "checkpoint_file_sha256": checkpoint_digest,
         "training_manifest_file": manifest_file.name,
         "training_manifest_sha256": sha256(manifest_bytes).hexdigest(),
+        "manifest_attests_checkpoint": manifest_checkpoint_hash is not None,
     }
     if any(checkpoint[name].get("state_encoding") != LimitOrderAwareQLearningAgent.state_encoding for name in AGENTS):
         parser.error("expected a limit-order checkpoint")
-    replays = [(name, build_replay(checkpoint, args, name, multiplier)) for name, multiplier in SCENARIOS]
+    replays = [(name, build_replay(checkpoint, args, name, multiplier, participation))
+               for name, multiplier in SCENARIOS]
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name, replay in replays:
         replay["provenance"] = provenance
-        path = args.output_dir / f"limit_replay_{name}.json"
+        prefix = "limit_replay_learned_c" if args.deadline_c_mode == "learned" else "limit_replay"
+        path = args.output_dir / f"{prefix}_{name}.json"
         path.write_text(json.dumps(replay, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n",
                         encoding="utf-8")
         print(f"{path}: {len(replay['steps'])} steps, frozen hashes unchanged")

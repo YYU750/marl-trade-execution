@@ -41,6 +41,15 @@ export interface AgentStep {
   decision: {
     mode: 'greedy_q_over_tried_feasible_actions' | 'twap_fallback_no_tried_feasible_action'
     selected_action: Action
+    scheme_c?: {
+      proposed_action: Action
+      available: boolean
+      intervened: boolean
+      quote_ticks: number
+      catch_up_fraction: number
+      base_quantity_shares: number
+      added_quantity_shares: number
+    }
     selected_quantity_shares: number
     selected_q_value: number | null
     greedy_tie_count: number
@@ -62,6 +71,8 @@ export interface AgentStep {
 export interface Replay {
   schema_version: '1.0' | '2.0'
   completion_mode?: 'autonomous' | 'none'
+  deadline_c_mode?: 'learned'
+  participation_tier?: 'legacy' | 'low' | 'medium' | 'high'
   source_ref: string
   checkpoint_episode: number
   seed: number
@@ -176,6 +187,19 @@ export function parseReplay(value: unknown): Replay {
       check(decision.selected_q_value === null || Number.isFinite(decision.selected_q_value), 'selected_q_value')
       const selected = supportedActions.findIndex(action => action === decision.selected_action)
       check(selected >= 0, 'selected_action')
+      if (data.deadline_c_mode === 'learned' || decision.scheme_c !== undefined) {
+        const c = numbers(decision.scheme_c, [
+          'quote_ticks', 'catch_up_fraction', 'base_quantity_shares', 'added_quantity_shares',
+        ], '方案 C')
+        check(limit && data.deadline_c_mode === 'learned' &&
+          supportedActions.some(action => action === c.proposed_action) &&
+          typeof c.available === 'boolean' && typeof c.intervened === 'boolean' &&
+          (!c.intervened || c.available) && Number(c.quote_ticks) >= 0 &&
+          Number(c.catch_up_fraction) >= 0 && Number(c.catch_up_fraction) <= 1 &&
+          Number(c.base_quantity_shares) >= 0 && Number(c.added_quantity_shares) >= 0 &&
+          Math.abs(Number(c.base_quantity_shares) + Number(c.added_quantity_shares) -
+            Number(decision.selected_quantity_shares)) < 1e-6, '方案 C 动作和下单量')
+      }
       for (const key of ['all_action_q_values', 'all_action_visit_counts'] as const) {
         const array = decision[key]
         check(Array.isArray(array) && array.length === actions.length && array.every(Number.isFinite), key)

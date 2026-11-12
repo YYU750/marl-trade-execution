@@ -47,6 +47,18 @@ python .\run_experiment.py --episodes 500 --training-runs 1 --eval-seeds 1 --che
 python .\export_limit_order_replay.py --output-dir .\outputs\advanced_self_play_autonomous_completion\replays
 ```
 
+### 学习型方案 C 回放
+
+在「回放配置」中选择「方案 C · 正常波动」或「方案 C · 两倍波动」。决策页分别显示普通策略的候选动作与 Q 值、方案 C 的加急报价和追加提交量，以及普通撮合和环境兜底的成交量。回合总结汇总主动追赶次数和追加提交股数。
+
+从 `multi_agent_execution` 目录重新训练和导出时，导出器会从匹配的训练清单识别学习型方案 C，并生成独立的预设文件。
+
+```powershell
+$out = '.\outputs\advanced_self_play_autonomous_completion\learned_c_frontend'
+python .\run_experiment.py --deadline-c-mode learned --output-dir $out
+python .\export_limit_order_replay.py --checkpoint-file (Join-Path $out 'checkpoint_qtables_run1.json') --source-ref frontend_UI@3f70301 --output-dir ..\frontend\public
+```
+
 训练和导出都使用相同的完单模式。两条命令加上 `--completion-mode none` 即可生成无兜底对照，导出目录也应改为 `outputs/advanced_self_play_no_completion/replays`。重新训练会产生包含新时间戳的清单，其文件哈希随之变化。需要复核内置回放的原始文件哈希时，使用随仓库提供的固定输入。
 
 可以在 `.env.local` 设置 `VITE_REPLAY_URL` 指向兼容的默认 JSON 地址。浏览器跨域读取时，数据服务需允许对应来源。接口结构变化集中在 `src/replay.ts` 的类型与校验函数中。

@@ -65,9 +65,14 @@ function CostTable({ a, b, totals, limit, opportunity }: {
   </table></div>
 }
 
-const scenarios = ['normal', 'high_volatility'] as const
-type Scenario = typeof scenarios[number]
-const presetUrl = (scenario: Scenario) => `${import.meta.env.BASE_URL}limit_replay_${scenario}.json`
+const presets = {
+  learned_c_normal: { scenario: 'normal', learned: true },
+  learned_c_high_volatility: { scenario: 'high_volatility', learned: true },
+  normal: { scenario: 'normal', learned: false },
+  high_volatility: { scenario: 'high_volatility', learned: false },
+} as const
+type Scenario = keyof typeof presets
+const presetUrl = (preset: Scenario) => `${import.meta.env.BASE_URL}limit_replay_${preset}.json`
 
 function ReplayConfig({ replay, onScenario, preset }: {
   replay: Replay; onScenario: (scenario: Scenario) => Promise<void>; preset: Scenario | null
@@ -110,10 +115,10 @@ function ReplayConfig({ replay, onScenario, preset }: {
         <div><dt>检查点 / 种子</dt><dd>{replay.checkpoint_episode} / {replay.seed}</dd></div>
       </dl>
       <h3>内置市场情景</h3>
-      <div className={styles.segmented} aria-label="选择内置回放情景">{scenarios.map(scenario =>
-        <button key={scenario} aria-pressed={preset === scenario}
-          disabled={pending !== null || preset === scenario} onClick={() => void changeScenario(scenario)}>
-          {scenarioLabel(scenario)}{pending === scenario && ' · 载入中'}
+      <div className={styles.segmented} aria-label="选择内置回放">{(Object.keys(presets) as Scenario[]).map(key =>
+        <button key={key} aria-pressed={preset === key}
+          disabled={pending !== null || preset === key} onClick={() => void changeScenario(key)}>
+          {presets[key].learned ? '方案 C · ' : '原策略 · '}{scenarioLabel(presets[key].scenario)}{pending === key && ' · 载入中'}
         </button>
       )}</div>
       <p className={styles.hint}>切换情景会加载预生成的整局冻结回放。</p>
@@ -254,7 +259,7 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
             <h1>{pages.find(item => item.id === page)?.title}</h1>
             <span className={styles.badge}><Icon name="snowflake" size={16} />冻结策略</span>
           </div>
-          <div className={styles.metadata}>{scenarioLabel(replay.scenario)}<i />检查点 {replay.checkpoint_episode}<i />种子 {replay.seed}</div>
+          <div className={styles.metadata}>{scenarioLabel(replay.scenario)}{replay.deadline_c_mode === 'learned' && <><i />学习型方案 C</>}{replay.participation_tier && replay.participation_tier !== 'legacy' && <><i />{replay.participation_tier === 'medium' ? '中参与率 25%' : replay.participation_tier === 'low' ? '低参与率 5%' : '高参与率 60%'}</>}<i />检查点 {replay.checkpoint_episode}<i />种子 {replay.seed}</div>
         </div>
         <div className={styles.headerActions}>
           <ReplayConfig replay={replay} onScenario={onScenario} preset={preset} />
@@ -282,11 +287,11 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
                 <button className={styles.textButton} onClick={() => { setAgent(id); changePage('decision') }}>决策详情<Icon name="arrow" size={16} /></button>
               </div>
               <div className={styles.agentAction}>
-                <div><span>本步决策</span><strong className={styles.actionPill}>{actionLabels[record.decision.selected_action]}</strong></div>
+                <div><span>{record.decision.scheme_c?.intervened ? '方案 C · 主动追赶' : '本步决策'}</span><strong className={styles.actionPill}>{actionLabels[record.decision.selected_action]}</strong></div>
                 <div><span>{limit ? '本步提交' : '本步下单'}</span><strong>{shares(record.decision.selected_quantity_shares)} <small>股</small></strong></div>
               </div>
               <div className={styles.agentFacts}>
-                <span>Q 值 <b>{record.decision.selected_q_value === null ? '—' : num(record.decision.selected_q_value, 4)}</b></span>
+                <span>{record.decision.scheme_c ? '普通策略 Q 值' : 'Q 值'} <b>{record.decision.selected_q_value === null ? '—' : num(record.decision.selected_q_value, 4)}</b></span>
                 <span>已完成 <b>{percent(completed)}</b></span>
                 {limit ? <span>普通成交 <b>{shares(fillQuantity(record) - forced)} 股</b>{forced > 0 &&
                   <> · 兜底 <b>{shares(forced)} 股</b></>}</span>
@@ -335,13 +340,13 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
         </section>
         <div className={styles.marketGrid}>
           <section className={styles.glass}>
-            <Heading icon="decision">动作档位与 Q 值</Heading>
+            <Heading icon="decision">{selected.scheme_c ? '普通策略动作与 Q 值' : '动作档位与 Q 值'}</Heading>
             <div className={styles.tableWrap}><table className={styles.table}>
               <thead><tr><th scope="col">动作</th><th scope="col">下单股数</th><th scope="col">Q 值</th><th scope="col">访问次数</th><th scope="col">状态</th></tr></thead>
               <tbody>{replayActions(limit).map((action, index) => {
                 const feasible = selected.feasible_actions.find(candidate => candidate.index === index)
                 const visits = selected.all_action_visit_counts[index]
-                const picked = action === selected.selected_action
+                const picked = action === (selected.scheme_c?.proposed_action ?? selected.selected_action)
                 return <tr key={action} className={picked ? styles.chosen : !feasible ? styles.disabledRow : undefined}>
                   <th scope="row">{actionLabels[action]}</th><td>{feasible ? shares(feasible.quantity_shares) : '—'}</td>
                   <td>{visits ? num(selected.all_action_q_values[index], 4) : '—'}</td><td>{visits}</td>
@@ -357,9 +362,19 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
               <div className={styles.big}>{shares(selected.selected_quantity_shares)} <small>股</small></div>
             </div>
             <p>{decisionReason(active, limit)}</p>
+            {selected.scheme_c && <dl className={styles.rows}>
+              <div><dt>方案 C 决策</dt><dd>{selected.scheme_c.intervened ? '主动追赶'
+                : selected.scheme_c.available ? '保持普通动作' : '未触发'}</dd></div>
+              {selected.scheme_c.intervened && <>
+                <div><dt>加急报价 / 追赶比例</dt><dd>+{selected.scheme_c.quote_ticks} tick / {percent(selected.scheme_c.catch_up_fraction)}</dd></div>
+                <div><dt>IOC 基础量 / 追加提交</dt><dd>{shares(selected.scheme_c.base_quantity_shares)} / {shares(selected.scheme_c.added_quantity_shares)} 股</dd></div>
+              </>}
+            </dl>}
             {active.execution.limit_order ? <>
               <dl className={styles.rows}>
-                <div><dt>实际成交</dt><dd>{shares(fillQuantity(active))} 股</dd></div>
+                <div><dt>普通撮合成交</dt><dd>{shares(fillQuantity(active) - (active.execution.forced_completion_quantity_shares ?? 0))} 股</dd></div>
+                {(active.execution.forced_completion_quantity_shares ?? 0) > 0 &&
+                  <div><dt>环境兜底成交</dt><dd>{shares(active.execution.forced_completion_quantity_shares ?? 0)} 股</dd></div>}
                 <div><dt>新单限价</dt><dd>{active.execution.limit_order.limit_price === null
                   ? '—' : num(active.execution.limit_order.limit_price, 4)}</dd></div>
               </dl>
@@ -459,6 +474,10 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
               <span>未完成 <b>{shares(replay.summary[`${id}_unfilled_shares`])} 股</b></span>
               {replay.completion_mode === 'autonomous' && <span>期末兜底 <b>{shares(replay.summary[`${id}_forced_completion_shares`] ?? 0)} 股</b>
                 {' · '}{bp(replay.summary[`${id}_forced_completion_cost_bps`] ?? 0, 2)}（已计入总成本）</span>}</div>
+            {replay.deadline_c_mode === 'learned' && <p className={styles.hint}>方案 C 主动追赶 <b>{
+              replay.steps.filter(step => step.agents[id].decision.scheme_c?.intervened).length
+            } 次</b> · 累计追加提交 <b>{shares(replay.steps.reduce((sum, step) =>
+              sum + (step.agents[id].decision.scheme_c?.added_quantity_shares ?? 0), 0))} 股</b></p>}
           </section>
         )}</div>
         <div className={styles.pair}>
@@ -488,7 +507,7 @@ function Dashboard({ replay, filename, onImport, onRestore, onScenario, preset }
 }
 
 const configuredUrl = import.meta.env.VITE_REPLAY_URL
-const defaultUrl = configuredUrl || presetUrl('normal')
+const defaultUrl = configuredUrl || presetUrl('learned_c_normal')
 async function fetchReplay(url: string, signal?: AbortSignal) {
   const response = await fetch(url, { signal })
   if (!response.ok) throw new Error(`读取回放失败（HTTP ${response.status}）`)
@@ -500,7 +519,7 @@ function App() {
   const [filename, setFilename] = useState('内置回放')
   const [error, setError] = useState('')
   const [version, setVersion] = useState(0)
-  const [preset, setPreset] = useState<Scenario | null>(configuredUrl ? null : 'normal')
+  const [preset, setPreset] = useState<Scenario | null>(configuredUrl ? null : 'learned_c_normal')
   const fileInput = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const controller = new AbortController()
@@ -514,7 +533,9 @@ function App() {
   }, [])
   async function selectScenario(scenario: Scenario) {
     const data = await fetchReplay(presetUrl(scenario))
-    if (data.schema_version !== '2.0' || data.scenario !== scenario) {
+    const expected = presets[scenario]
+    if (data.schema_version !== '2.0' || data.scenario !== expected.scenario ||
+        (data.deadline_c_mode === 'learned') !== expected.learned) {
       throw new Error('内置回放的版本或情景与选项不符。')
     }
     setReplay(data)
@@ -545,7 +566,7 @@ function App() {
       onScenario={selectScenario} preset={preset}
       onRestore={() => {
         if (!defaultReplay) { setError('内置样例尚未加载。'); return }
-        setPreset(configuredUrl ? null : 'normal')
+        setPreset(configuredUrl ? null : 'learned_c_normal')
         setReplay(defaultReplay); setFilename('内置回放'); setVersion(previous => previous + 1); setError('')
       }} /> : <main className={styles.loading}><section className={styles.glass}>
       <h1>交易执行实验室</h1><p role="status">{error ? '请选择冻结回放文件' : '正在加载冻结回放…'}</p>

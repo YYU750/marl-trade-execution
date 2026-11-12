@@ -65,16 +65,67 @@ def _poisson(rng: random.Random, mean: float) -> int:
     return count - 1
 
 
+def _poisson_from_uniform(mean: float, uniform_draw: float) -> int:
+    """Inverse-CDF Poisson draw, useful for common-random-number scenarios."""
+    if mean <= 0:
+        return 0
+    probability = math.exp(-mean)
+    cumulative = probability
+    count = 0
+    while uniform_draw > cumulative:
+        count += 1
+        probability *= mean / count
+        cumulative += probability
+        if count > max(100, int(mean * 10 + 50)):
+            break
+    return count
+
+
 def make_market_tape(seed: int, horizon: int, base_slice: float,
                      step_volatility_bps: float,
-                     lob: SyntheticLOBConfig) -> list[dict[str, object]]:
+                     lob: SyntheticLOBConfig, *,
+                     activity_multiplier: float = 1.0,
+                     background_volume_per_step: float = 0.0,
+                     background_volume_log_sigma: float = 0.25) -> list[dict[str, object]]:
     """Pre-generate common exogenous events for paired strategy evaluation."""
-    rng = random.Random(seed ^ 0x5DEECE66D)
+    if activity_multiplier <= 0 or not math.isfinite(activity_multiplier):
+        raise ValueError("activity_multiplier must be finite and positive")
+    if background_volume_per_step < 0 or not math.isfinite(background_volume_per_step):
+        raise ValueError("background_volume_per_step must be finite and non-negative")
+    if background_volume_log_sigma < 0 or not math.isfinite(background_volume_log_sigma):
+        raise ValueError("background_volume_log_sigma must be finite and non-negative")
+
+    # Keep the historical event sequence byte-for-byte compatible for callers
+    # using the legacy defaults. Participation-tier runs instead use isolated,
+    # per-step streams so paired seeds share the same shocks and standardized
+    # event draws even when the tier changes event intensity.
+    legacy_rng = (random.Random(seed ^ 0x5DEECE66D)
+                  if activity_multiplier == 1.0 and background_volume_per_step == 0.0
+                  else None)
     tape: list[dict[str, object]] = []
-    for _ in range(horizon):
-        event_count = _poisson(rng, lob.sell_market_events_per_step)
+    for step in range(horizon):
+        if legacy_rng is not None:
+            rng = legacy_rng
+            event_count = _poisson(rng, lob.sell_market_events_per_step)
+            sell_rng = queue_rng = ask_rng = shock_rng = tie_rng = background_rng = rng
+        else:
+            # Per-component/per-step seeds make the same step's market shock
+            # and standardized innovations identical across participation
+            # tiers; only the explicitly scaled activity differs.
+            step_seed = seed + step * 0x9E3779B1
+            event_rng = random.Random(step_seed ^ 0x5DEECE66D)
+            event_count = _poisson_from_uniform(
+                lob.sell_market_events_per_step * activity_multiplier,
+                event_rng.random(),
+            )
+            sell_rng = random.Random(step_seed ^ 0xA0761D6478BD642F)
+            queue_rng = random.Random(step_seed ^ 0xE7037ED1A0B428DB)
+            ask_rng = random.Random(step_seed ^ 0x8EBC6AF09C88C6E3)
+            shock_rng = random.Random(step_seed ^ 0x589965CC75374CC3)
+            tie_rng = random.Random(step_seed ^ 0x1D8E4E27C47D124F)
+            background_rng = random.Random(step_seed ^ 0xEB44ACCAB455D165)
         sell_sizes = [
-            base_slice * rng.lognormvariate(
+            base_slice * sell_rng.lognormvariate(
                 math.log(lob.sell_order_mean_base_slices)
                 - 0.5 * lob.sell_order_log_sigma**2,
                 lob.sell_order_log_sigma,
@@ -82,27 +133,35 @@ def make_market_tape(seed: int, horizon: int, base_slice: float,
             for _ in range(event_count)
         ]
         queue_depths = [
-            base_slice * rng.lognormvariate(
+            base_slice * activity_multiplier * queue_rng.lognormvariate(
                 math.log(mean) - 0.5 * lob.ask_depth_log_sigma**2,
                 lob.ask_depth_log_sigma,
             )
             for mean in lob.passive_queue_mean_base_slices
         ]
         ask_depths = [
-            base_slice * rng.lognormvariate(
+            base_slice * activity_multiplier * ask_rng.lognormvariate(
                 math.log(mean) - 0.5 * lob.ask_depth_log_sigma**2,
                 lob.ask_depth_log_sigma,
             )
             for mean in lob.ask_depth_mean_base_slices
         ]
+        if background_volume_per_step > 0:
+            background_market_volume = background_volume_per_step * math.exp(
+                -0.5 * background_volume_log_sigma**2
+                + background_volume_log_sigma * background_rng.gauss(0.0, 1.0)
+            )
+        else:
+            background_market_volume = 0.0
         tape.append({
-            "shock_bps": rng.gauss(0.0, step_volatility_bps),
+            "shock_bps": shock_rng.gauss(0.0, step_volatility_bps),
             "sell_event_count": event_count,
             "sell_event_sizes": sell_sizes,
             "sell_flow": sum(sell_sizes),
             "bid_queue_depths": queue_depths,
             "ask_depths": ask_depths,
-            "tie_order": rng.sample(("A", "B"), 2),
+            "tie_order": tie_rng.sample(("A", "B"), 2),
+            "background_market_volume": background_market_volume,
         })
     return tape
 

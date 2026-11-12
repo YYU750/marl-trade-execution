@@ -227,7 +227,7 @@
 .speed select { min-width: 52px; padding: 6px; }
 .speed option { background: #07527b; }
 .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px; color: var(--muted); font-size: clamp(11px, .93vw, 15px); padding: 0 1px; }
-.segmented { display: inline-flex; gap: 3px; border: 1px solid var(--border); border-radius: 10px; padding: 3px; background: #0a244754; }
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 3px; border: 1px solid var(--border); border-radius: 10px; padding: 3px; background: #0a244754; }
 .segmented button { border: 1px solid transparent; border-radius: 7px; padding: 6px 13px; color: #bddcf3; background: transparent; font-size: 13px; }
 .segmented button[aria-pressed="true"] { background: #76d8ff37; border-color: #87e0ff63; color: #f2fdff; }
 .stateLine { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #a9dfff25; font-size: 12px; color: var(--muted); }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Primary two-sided Q-learning self-play model for execution simulation.
+"""Primary two-sided Q-learning with learned Scheme C for execution simulation.
 
 This is the primary local, stylized research simulation. A and B learn
 simultaneously. The fixed-opponent benchmark remains available separately as
@@ -43,13 +43,60 @@ from limit_order_book import (
 from schedule_aware_q import LimitOrderAwareQLearningAgent, SchemeCDecisionPolicy
 
 
-DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play_autonomous_completion"
+DEFAULT_OUT = Path(__file__).resolve().parent / "outputs" / "advanced_self_play_autonomous_learned_c_medium"
 SCENARIOS = (("normal", 1.0), ("high_volatility", 2.0))
 ACTION_NAMES = (
     "hold_or_wait", "passive_half_deep", "passive_base_best_bid",
     "passive_1_5_inside_spread", "marketable_2x_limit_ioc",
 )
 LOB_CONFIG = SyntheticLOBConfig()
+PARTICIPATION_TARGETS = {"low": 0.05, "medium": 0.25, "high": 0.60}
+BACKGROUND_VOLUME_LOG_SIGMA = 0.25
+
+
+def resolve_participation_scenario(tier: str, config: Config) -> dict[str, Any]:
+    """Translate a planned A+B share into explicit synthetic market activity.
+
+    The 25% tier anchors the existing synthetic book. Other tiers scale its
+    background turnover and displayed/order-flow liquidity proportionally;
+    temporary/permanent price impact follows an inverse square-root proxy.
+    These are scenario assumptions, not estimates from real market data.
+    """
+    if tier == "legacy":
+        return {
+            "tier": "legacy", "target_share": None,
+            "planned_ab_volume": 2.0 * config.order_size,
+            "expected_background_volume": None,
+            "background_volume_per_step": 0.0,
+            "activity_multiplier": 1.0,
+            "impact_multiplier": config.market_impact_multiplier,
+            "reference_background_volume": None,
+            "background_volume_log_sigma": BACKGROUND_VOLUME_LOG_SIGMA,
+        }
+    if tier not in PARTICIPATION_TARGETS:
+        raise ValueError(f"unknown participation tier: {tier}")
+    target_share = PARTICIPATION_TARGETS[tier]
+    planned_ab_volume = 2.0 * config.order_size
+    expected_background_volume = planned_ab_volume * (1.0 - target_share) / target_share
+    reference_background_volume = (
+        2.0 * config.order_size
+        * (1.0 - PARTICIPATION_TARGETS["medium"])
+        / PARTICIPATION_TARGETS["medium"]
+    )
+    activity_multiplier = expected_background_volume / reference_background_volume
+    return {
+        "tier": tier,
+        "target_share": target_share,
+        "planned_ab_volume": planned_ab_volume,
+        "planned_share_A": config.order_size / (planned_ab_volume + expected_background_volume),
+        "planned_share_B": config.order_size / (planned_ab_volume + expected_background_volume),
+        "expected_background_volume": expected_background_volume,
+        "background_volume_per_step": expected_background_volume / config.horizon,
+        "activity_multiplier": activity_multiplier,
+        "impact_multiplier": config.market_impact_multiplier / math.sqrt(activity_multiplier),
+        "reference_background_volume": reference_background_volume,
+        "background_volume_log_sigma": BACKGROUND_VOLUME_LOG_SIGMA,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,10 +117,16 @@ def parse_args() -> argparse.Namespace:
         help="terminal learning penalty per full-order fraction left unfilled or sent to the backstop",
     )
     parser.add_argument(
-        "--deadline-c-mode", choices=("none", "stochastic", "learned"), default="none",
-        help="none=ordinary Q actions; stochastic=randomized C; learned=Q agent learns C timing and measure",
+        "--deadline-c-mode", choices=("none", "stochastic", "learned"), default="learned",
+        help="learned (default)=Q agent learns C timing and measures; none=ordinary Q baseline; stochastic=randomized C",
     )
     parser.add_argument("--seed", type=int, default=20261103)
+    parser.add_argument(
+        "--participation-tier", choices=("legacy", "low", "medium", "high"),
+        default="medium",
+        help=("planned combined A+B share of A+B plus background market volume: "
+              "low=5%%, medium=25%%, high=60%%; legacy preserves the pre-tier book"),
+    )
     parser.add_argument(
         "--completion-mode", choices=("autonomous", "none"), default="autonomous",
         help=("autonomous keeps every intraday action under Q-learning and uses a terminal "
@@ -98,7 +151,7 @@ def parse_args() -> argparse.Namespace:
             suffix = ("no_completion_learned_c" if args.deadline_c_mode == "learned" else
                       "no_completion_stochastic_c" if args.deadline_c_mode == "stochastic" else
                       "no_completion")
-        args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}"
+        args.output_dir = Path(__file__).resolve().parent / "outputs" / f"advanced_self_play_{suffix}_{args.participation_tier}"
     return args
 
 
@@ -258,7 +311,8 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
             epsilon: float = 0.0, training: bool = False,
             trace_rows: list[dict[str, Any]] | None = None,
             completion_mode: str = "autonomous",
-            deadline_c_mode: str | dict[str, str] = "none") -> dict[str, Any]:
+            deadline_c_mode: str | dict[str, str] = "learned",
+            participation: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run one synchronous episode with event-based limit-order execution."""
     if completion_mode not in {"autonomous", "none"}:
         raise ValueError("completion_mode must be 'autonomous' or 'none'")
@@ -273,9 +327,14 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         raise ValueError("Deterministic C is evaluation-only; use stochastic C to train the integrated policy")
     rng_a = random.Random(seed ^ 0x13579BDF)
     rng_b = random.Random(seed ^ 0x2468ACE0)
+    participation = participation or resolve_participation_scenario("legacy", config)
+    market_impact_multiplier = float(participation["impact_multiplier"])
     tape = make_market_tape(
         seed, config.horizon, config.base_slice,
         config.step_volatility_bps * volatility_multiplier, LOB_CONFIG,
+        activity_multiplier=float(participation["activity_multiplier"]),
+        background_volume_per_step=float(participation["background_volume_per_step"]),
+        background_volume_log_sigma=float(participation["background_volume_log_sigma"]),
     )
     initial_mid = config.initial_price
     mid = initial_mid
@@ -541,7 +600,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                 forced_completion_price, forced_completion_impact_bps = terminal_completion_price(
                     mid, config.half_spread_bps, LOB_CONFIG.tick_bps, forced_total,
                     config.base_slice, config.temporary_impact_bps_per_slice,
-                    config.market_impact_multiplier, config.step_minutes,
+                    market_impact_multiplier, config.step_minutes,
                 )
                 for name in ("A", "B"):
                     forced_completion_qty[name] = max(
@@ -563,7 +622,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
         aggressive_volume = sum(fill.quantity for fill in taker_events)
         temp_impact_bps = (
             config.temporary_impact_bps_per_slice
-            * config.market_impact_multiplier * config.step_minutes
+            * market_impact_multiplier * config.step_minutes
             * aggressive_volume / max(config.base_slice, 1.0)
         )
         rewards: dict[str, float] = {}
@@ -617,7 +676,7 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
 
         total_executed = actual_fill_this_step["A"] + actual_fill_this_step["B"]
         permanent_impact = (config.permanent_impact_bps_per_slice *
-                            config.market_impact_multiplier * config.step_minutes *
+                            market_impact_multiplier * config.step_minutes *
                             total_executed / config.base_slice)
         shock_bps = float(event["shock_bps"])
         next_mid = mid * (1 + (shock_bps + permanent_impact) / 10_000.0)
@@ -686,6 +745,11 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                                     if training else "frozen_checkpoint_replay"),
                     "seed": seed,
                     "scenario_multiplier": volatility_multiplier,
+                    "participation_tier": participation["tier"],
+                    "target_market_participation_AB": participation["target_share"],
+                    "background_market_volume": event["background_market_volume"],
+                    "activity_multiplier": participation["activity_multiplier"],
+                    "market_impact_multiplier": market_impact_multiplier,
                     "step": t + 1,
                     "elapsed_seconds": t * config.step_seconds,
                     "agent": name,
@@ -795,8 +859,31 @@ def episode(agent_a: QLearningAgent, agent_b: QLearningAgent, config: Config,
                      (config.order_size * initial_mid) * 10_000.0)
         fee_bps_cost = fee_cash[name] / (config.order_size * initial_mid) * 10_000.0
         cost[name] = gross_bps + fee_bps_cost + opportunity
+    background_market_volume = math.fsum(
+        float(event["background_market_volume"]) for event in tape
+    )
+    ordinary_ab_fills = maker_fills["A"] + maker_fills["B"] + taker_fills["A"] + taker_fills["B"]
+    total_ab_fills = fills["A"] + fills["B"]
+    denominator_ordinary = ordinary_ab_fills + background_market_volume
+    denominator_with_backstop = total_ab_fills + background_market_volume
     return {
         "seed": seed,
+        "participation_tier": participation["tier"],
+        "target_market_participation_AB": participation["target_share"],
+        "planned_AB_volume": participation["planned_ab_volume"],
+        "expected_background_market_volume": participation["expected_background_volume"],
+        "realized_background_market_volume": background_market_volume,
+        "background_market_volume_per_step_expected": participation["background_volume_per_step"],
+        "liquidity_activity_multiplier": participation["activity_multiplier"],
+        "effective_market_impact_multiplier": market_impact_multiplier,
+        "ordinary_market_fills_AB": ordinary_ab_fills,
+        "realized_market_participation_AB": (
+            ordinary_ab_fills / denominator_ordinary if denominator_ordinary > 0 else None
+        ),
+        "realized_market_participation_AB_including_backstop": (
+            total_ab_fills / denominator_with_backstop
+            if denominator_with_backstop > 0 else None
+        ),
         "cost_A_bps": cost["A"], "cost_B_bps": cost["B"],
         "completion_A": completion["A"], "completion_B": completion["B"],
         "unfilled_A": unfilled["A"], "unfilled_B": unfilled["B"],
@@ -871,6 +958,7 @@ def learning_reward_components(step_reward: float, remaining: float, config: Con
 
 def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[dict[int, dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], QLearningAgent, QLearningAgent]:
     run_seed = args.seed + run_id * 1_000_003
+    participation = resolve_participation_scenario(args.participation_tier, config)
     agent_a = LimitOrderAwareQLearningAgent(config, opponent_aware=True)
     agent_b = LimitOrderAwareQLearningAgent(config, opponent_aware=True)
     snapshots: dict[int, dict[str, Any]] = {
@@ -889,13 +977,22 @@ def train_run(run_id: int, args: argparse.Namespace, config: Config) -> tuple[di
         result = episode(agent_a, agent_b, config, run_seed + ep * 37 + 11,
                          args.fee_bps, 1.0, epsilon=epsilon, training=True,
                          completion_mode=args.completion_mode,
-                         deadline_c_mode=args.deadline_c_mode)
+                         deadline_c_mode=args.deadline_c_mode,
+                         participation=participation)
         rewards_a.append(result["reward_A"])
         rewards_b.append(result["reward_B"])
         costs_a.append(result["cost_A_bps"])
         costs_b.append(result["cost_B_bps"])
         episodes_rows.append({
             "training_run": run_id, "episode": ep, "epsilon": epsilon,
+            "participation_tier": result["participation_tier"],
+            "target_market_participation_AB": result["target_market_participation_AB"],
+            "realized_market_participation_AB": result["realized_market_participation_AB"],
+            "realized_market_participation_AB_including_backstop": result["realized_market_participation_AB_including_backstop"],
+            "realized_background_market_volume": result["realized_background_market_volume"],
+            "ordinary_market_fills_AB": result["ordinary_market_fills_AB"],
+            "liquidity_activity_multiplier": result["liquidity_activity_multiplier"],
+            "effective_market_impact_multiplier": result["effective_market_impact_multiplier"],
             "A_reward": result["reward_A"], "B_reward": result["reward_B"],
             "A_cost_bps": result["cost_A_bps"], "B_cost_bps": result["cost_B_bps"],
             "A_completion_rate": result["completion_A"], "B_completion_rate": result["completion_B"],
@@ -959,6 +1056,7 @@ def mean_sd(values: list[float]) -> tuple[float, float]:
 def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                         args: argparse.Namespace, config: Config) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    participation = resolve_participation_scenario(args.participation_tier, config)
     checkpoints = sorted(snapshots)
     for a_cp in checkpoints:
         for b_cp in checkpoints:
@@ -971,10 +1069,21 @@ def evaluate_cross_play(run_id: int, snapshots: dict[int, dict[str, Any]],
                     result = episode(a, b, config, seed, args.fee_bps,
                                      volatility_multiplier, training=False,
                                      completion_mode=args.completion_mode,
-                                     deadline_c_mode=args.deadline_c_mode)
+                                     deadline_c_mode=args.deadline_c_mode,
+                                     participation=participation)
                     rows.append({
                         "training_run": run_id, "A_checkpoint": a_cp, "B_checkpoint": b_cp,
                         "scenario": scenario, "seed": seed,
+                        "participation_tier": result["participation_tier"],
+                        "target_market_participation_AB": result["target_market_participation_AB"],
+                        "realized_market_participation_AB": result["realized_market_participation_AB"],
+                        "realized_market_participation_AB_including_backstop": result["realized_market_participation_AB_including_backstop"],
+                        "planned_AB_volume": result["planned_AB_volume"],
+                        "expected_background_market_volume": result["expected_background_market_volume"],
+                        "realized_background_market_volume": result["realized_background_market_volume"],
+                        "ordinary_market_fills_AB": result["ordinary_market_fills_AB"],
+                        "liquidity_activity_multiplier": result["liquidity_activity_multiplier"],
+                        "effective_market_impact_multiplier": result["effective_market_impact_multiplier"],
                         "cost_A_bps": result["cost_A_bps"], "cost_B_bps": result["cost_B_bps"],
                         "completion_A": result["completion_A"], "completion_B": result["completion_B"],
                         "unfilled_A": result["unfilled_A"], "unfilled_B": result["unfilled_B"],
@@ -1017,6 +1126,25 @@ def summarize_cross_play(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         summaries.append({
             "training_run": run_id, "A_checkpoint": a_cp, "B_checkpoint": b_cp,
             "scenario": scenario, "evaluation_seeds": len(group),
+            "participation_tier": group[0]["participation_tier"],
+            "target_market_participation_AB": group[0]["target_market_participation_AB"],
+            "realized_market_participation_AB_mean": statistics.fmean(
+                r["realized_market_participation_AB"] for r in group
+                if r["realized_market_participation_AB"] is not None
+            ) if any(r["realized_market_participation_AB"] is not None for r in group) else None,
+            "realized_market_participation_AB_including_backstop_mean": statistics.fmean(
+                r["realized_market_participation_AB_including_backstop"] for r in group
+                if r["realized_market_participation_AB_including_backstop"] is not None
+            ) if any(r["realized_market_participation_AB_including_backstop"] is not None for r in group) else None,
+            "expected_background_market_volume": group[0]["expected_background_market_volume"],
+            "realized_background_market_volume_mean": statistics.fmean(
+                r["realized_background_market_volume"] for r in group
+            ),
+            "ordinary_market_fills_AB_mean": statistics.fmean(
+                r["ordinary_market_fills_AB"] for r in group
+            ),
+            "liquidity_activity_multiplier": group[0]["liquidity_activity_multiplier"],
+            "effective_market_impact_multiplier": group[0]["effective_market_impact_multiplier"],
             "A_cost_mean_bps": statistics.fmean(costs_a),
             "A_cost_sd_bps": statistics.stdev(costs_a) if len(costs_a) > 1 else 0.0,
             "B_cost_mean_bps": statistics.fmean(costs_b),
@@ -1126,6 +1254,11 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                   best_response: list[dict[str, Any]],
                   diagnostics: list[dict[str, Any]]) -> str:
     final_episode = args.episodes
+    participation = resolve_participation_scenario(args.participation_tier, Config(
+        inventory_risk_weight=0.0,
+        schedule_deficit_penalty_bps=args.schedule_deficit_penalty_bps,
+        terminal_unfilled_penalty_bps=args.terminal_unfilled_penalty_bps,
+    ))
     if args.completion_mode == "autonomous":
         if args.deadline_c_mode == "learned":
             mode_note = (
@@ -1133,14 +1266,14 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                 "42、51、57 步（约 20 分 30 秒、25 分钟、28 分钟）只是分析参照，Agent 可在任一落后时间点自行启动、等待和决定追赶幅度。普通撮合后，终端兜底仅处理剩余母单。"
             )
             mode_label = "双边 Q-learning + 学习型 C 决策 + 终端完单兜底"
-            output_path = "outputs/advanced_self_play_autonomous_learned_c"
+            output_path = f"outputs/advanced_self_play_autonomous_learned_c_{args.participation_tier}"
         elif args.deadline_c_mode == "stochastic":
             mode_note = (
                 "- 盘中策略：Q-learning Agent 先自主选动作；当进度落后时，随机 C 决策按阶段概率抽取动作下限、报价加价档和追赶数量比例；"
                 "Q 表按最终实际执行的动作更新。收盘兜底只负责剩余未成交量，兜底量和成本单独报告。"
             )
             mode_label = "Q-learning + 随机 C 决策 + 终端完单兜底"
-            output_path = "outputs/advanced_self_play_autonomous_stochastic_c"
+            output_path = f"outputs/advanced_self_play_autonomous_stochastic_c_{args.participation_tier}"
         else:
             mode_note = (
                 "- 完单方式：全程由 Q-learning Agent 自主选择 60 个时间步的动作、报价和常规子单数量；"
@@ -1148,13 +1281,13 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
                 "兜底成交量和成本单独报告，不能算作 Agent 自主成交。"
             )
             mode_label = "自主决策 + 终端完单兜底"
-            output_path = "outputs/advanced_self_play_autonomous_completion"
+            output_path = f"outputs/advanced_self_play_autonomous_completion_{args.participation_tier}"
     else:
         mode_note = (
             "- 完单方式：未启用终端完单兜底；所有盘中动作由 Q-learning 自主选择，订单可能无法按时完成。"
         )
         mode_label = "Agent 自主决策、无完单兜底"
-        output_path = "outputs/advanced_self_play_no_completion"
+        output_path = f"outputs/advanced_self_play_no_completion_{args.participation_tier}"
     lines = [
         "# 双边同步 Q-learning：本轮运行记录", "",
         f"- 训练：{args.training_runs} 个独立种子，每个 {args.episodes} 回合；每回合 {Config().horizon} 个 30 秒时间步。",
@@ -1165,6 +1298,53 @@ def findings_text(args: argparse.Namespace, summaries: list[dict[str, Any]],
         f"- 完成惩罚：每步对落后均匀进度的数量按 {args.schedule_deficit_penalty_bps:g} bp 系数惩罚；终局对未完成量或送入收盘兜底的数量按 {args.terminal_unfilled_penalty_bps:g} bp 系数惩罚。该项属于学习奖励，不计入经济交易成本。",
         f"- 完单配置：{mode_label}。",
         mode_note,
+        "## A+B 市场参与率分层",
+        "",
+        (
+            "- 本次为 legacy 兼容档：不单独生成背景市场成交量，不应将旧输出解释成 5%、25% 或 60% 的市场参与率。"
+            if participation["tier"] == "legacy" else
+            f"- 本次训练和评估使用 **{participation['tier']}参与率档**；预设 A+B 计划参与率为 "
+            f"{participation['target_share']:.0%}。两家各下单 {Config().order_size:,.0f} 股，合计计划量 "
+            f"{participation['planned_ab_volume']:,.0f} 股；按定义需要的背景成交量期望为 "
+            f"{participation['expected_background_volume']:,.0f} 股/30 分钟，约 "
+            f"{participation['background_volume_per_step']:,.0f} 股/30 秒步。背景量由独立对数正态过程生成，"
+            f"变异系数参数 sigma={participation['background_volume_log_sigma']:.2f}，并排除 A、B 成交。"
+        ),
+        (
+            "- legacy 档没有参与率分层统计。"
+            if participation["tier"] == "legacy" else
+            f"- 合成订单流与盘口深度相对 25% 中档按背景量线性缩放，活动倍数为 "
+            f"{participation['activity_multiplier']:.4f}；临时/永久冲击及终端兜底冲击按背景量平方根反比调整，"
+            f"有效冲击倍数为 {participation['impact_multiplier']:.4f}（基准 Config 冲击倍数 "
+            f"{Config().market_impact_multiplier:g}）。此为可复现的教学情景映射，不是实证校准。"
+        ),
+        "- 主实现份额按普通盘口撮合量计算：普通 A+B 成交量 ÷（普通 A+B 成交量 + 其他参与者背景成交量）；另单列含终端兜底的比例。终端兜底是合成收盘流动性，不纳入 Agent 普通市场成交份额。",
+        "- 背景成交量是独立生成的外生市场活动代理，不是由完整第三方订单逐笔撮合出来的背景交易量；因此表中实现参与率是模型内情景统计，不能当作现实市场实测份额。",
+        "",
+        "| 波动情景 | A+B 普通撮合实现参与率均值 | 含兜底实现参与率均值 | 背景成交量均值 (股) | A+B 普通成交量均值 (股) |",
+        "|---|---:|---:|---:|---:|",
+        *[
+            "| {} | {} | {} | {:,.0f} | {:,.0f} |".format(
+                scenario,
+                "未定义" if participation["tier"] == "legacy" else "{:.2%}".format(statistics.fmean(
+                    r["realized_market_participation_AB_mean"] for r in summaries
+                    if r["A_checkpoint"] == final_episode and r["B_checkpoint"] == final_episode
+                    and r["scenario"] == scenario and r["realized_market_participation_AB_mean"] is not None
+                )),
+                "未定义" if participation["tier"] == "legacy" else "{:.2%}".format(statistics.fmean(
+                    r["realized_market_participation_AB_including_backstop_mean"] for r in summaries
+                    if r["A_checkpoint"] == final_episode and r["B_checkpoint"] == final_episode
+                    and r["scenario"] == scenario and r["realized_market_participation_AB_including_backstop_mean"] is not None
+                )),
+                statistics.fmean(r["realized_background_market_volume_mean"] for r in summaries
+                                 if r["A_checkpoint"] == final_episode and r["B_checkpoint"] == final_episode
+                                 and r["scenario"] == scenario),
+                statistics.fmean(r["ordinary_market_fills_AB_mean"] for r in summaries
+                                 if r["A_checkpoint"] == final_episode and r["B_checkpoint"] == final_episode
+                                 and r["scenario"] == scenario),
+            ) for scenario, _ in SCENARIOS
+        ],
+        "",
         "- 普通执行仍是教学用事件驱动限价单：成交量由队列、可见卖盘和随机订单流决定；IOC 只触达其限价范围内的卖盘；终端兜底使用显式合成深层流动性价格曲线，并单独记录强制成交股数。",
         "- 本文件的数字仅是本次命令参数下的模拟结果，不自动代表收敛或现实市场效果。", "",
         "## 最终检查点的交叉对局", "",
@@ -1232,12 +1412,17 @@ def main() -> None:
         schedule_deficit_penalty_bps=args.schedule_deficit_penalty_bps,
         terminal_unfilled_penalty_bps=args.terminal_unfilled_penalty_bps,
     )
+    participation = resolve_participation_scenario(args.participation_tier, config)
     all_training: list[dict[str, Any]] = []
     all_diagnostics: list[dict[str, Any]] = []
     all_raw: list[dict[str, Any]] = []
     checkpoint_sha256: dict[str, str] = {}
     checkpoint_count = math.ceil(args.episodes / args.checkpoint_interval)
-    print(f"Advanced self-play: {args.training_runs} runs × {args.episodes} episodes; checkpoints about {checkpoint_count} per run.", flush=True)
+    print(
+        f"Advanced self-play: tier={args.participation_tier}; "
+        f"{args.training_runs} runs × {args.episodes} episodes; "
+        f"checkpoints about {checkpoint_count} per run.", flush=True,
+    )
     for run_id in range(1, args.training_runs + 1):
         print(f"Training run {run_id}/{args.training_runs} ...", flush=True)
         snapshots, training_rows, diagnostics, final_a, final_b = train_run(run_id, args, config)
@@ -1288,6 +1473,7 @@ def main() -> None:
                        "schedule_deficit_penalty_bps": args.schedule_deficit_penalty_bps,
                        "terminal_unfilled_penalty_bps": args.terminal_unfilled_penalty_bps,
                        "deadline_c_mode": args.deadline_c_mode,
+                       "participation_tier": args.participation_tier,
                        "seed": args.seed,
                        "output_dir": output_dir_record},
         "config": {**asdict(config), "horizon_steps": config.horizon,
@@ -1373,6 +1559,28 @@ def main() -> None:
                 "none; actual completion rate is an outcome and terminal unfilled shares incur opportunity cost plus penalty"
             ),
             "terminal_backstop_price": "half-spread + tick_bps*sqrt(forced_qty/base_slice) + temporary_impact_bps_per_slice*market_impact_multiplier*step_minutes*(forced_qty/base_slice)" if args.completion_mode == "autonomous" else None,
+            "market_participation_layer": {
+                "definition": "planned A+B parent-order quantity / (planned A+B quantity + expected background-market turnover excluding A and B)",
+                "tier_target_shares": PARTICIPATION_TARGETS,
+                "selected_tier": participation["tier"],
+                "target_share": participation["target_share"],
+                "planned_ab_volume_shares": participation["planned_ab_volume"],
+                "expected_background_volume_shares": participation["expected_background_volume"],
+                "expected_background_volume_per_step_shares": participation["background_volume_per_step"],
+                "background_volume_process": {
+                    "distribution": "mean-preserving lognormal, independent of A/B fills",
+                    "log_sigma": participation["background_volume_log_sigma"],
+                    "limitation": "exogenous turnover proxy; background participants are not individually submitted and matched in the order book",
+                },
+                "liquidity_activity_multiplier_vs_25pct_anchor": participation["activity_multiplier"],
+                "effective_impact_multiplier": participation["impact_multiplier"],
+                "mapping_assumptions": (
+                    "At each tier, sell-market event intensity and synthetic bid/ask displayed depths scale linearly with expected background turnover; temporary, permanent, and terminal-backstop impact multipliers scale inversely with the square root of turnover relative to the 25% anchor. These are stylized assumptions, not real-market calibration."
+                ),
+                "realized_share_primary": "ordinary A+B maker/taker fills / (ordinary A+B maker/taker fills + generated background market volume); terminal backstop excluded",
+                "realized_share_secondary": "all A+B fills including synthetic terminal backstop / (all A+B fills + generated background market volume)",
+                "paired_randomness": "same seed gives identical exogenous price shocks and standardized per-step innovations across participation tiers",
+            },
             "limit_order_parameters": asdict(LOB_CONFIG),
             "fee_economic_interpretation": f"{args.fee_bps:g} bp one-way = {args.fee_bps / 100:g}% of traded notional",
             "checkpoint_evaluation": "frozen cross-play on paired seeds",
